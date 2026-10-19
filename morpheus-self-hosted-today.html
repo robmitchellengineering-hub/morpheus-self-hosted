@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Morpheus — today</title>
+<style>
+:root { --green:#00e07f; --black:#07090c; --panel:#0c1118; --line:#1b2530;
+  --pink:#ff2fd6; --cyan:#06b6d4; --blue:#4d6bfe; --mut:#8b95a7; --text:#e6edf3; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--black); color:var(--text);
+  font:16px/1.6 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+.wrap { max-width:980px; margin:0 auto; padding:48px 24px 64px; }
+h1 { font-size:34px; margin:0 0 4px; color:#fff; letter-spacing:.5px; }
+.tag { color:var(--green); font-weight:600; margin:0 0 28px; }
+.lede { font-size:20px; line-height:1.5; color:#fff; margin:0 0 10px; }
+.lede em { color:var(--green); font-style:normal; }
+.sub { color:var(--mut); margin:0 0 36px; }
+h2 { font-size:13px; text-transform:uppercase; letter-spacing:2px; color:var(--green); margin:42px 0 14px; }
+.shots { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; }
+.shot { background:var(--panel); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+.shot img { width:100%; display:block; }
+.shot .cap { padding:10px 14px; font-size:13px; color:var(--mut); border-top:1px solid var(--line); }
+.shot .cap b { color:var(--text); }
+.nums { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:16px; }
+.num { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:18px; }
+.num .v { font-size:30px; color:var(--green); font-weight:700; }
+.num .l { font-size:14px; color:var(--text); margin-top:2px; }
+.num .s { font-size:12px; color:var(--mut); margin-top:6px; }
+table { border-collapse:collapse; width:100%; font-size:14px; }
+th,td { text-align:left; padding:9px 12px; border-bottom:1px solid var(--line); vertical-align:top; }
+th { color:var(--green); text-transform:uppercase; letter-spacing:1px; font-size:11px; }
+.ok { color:var(--green); } .no { color:var(--mut); }
+.callout { background:var(--panel); border-left:3px solid var(--green); border-radius:8px; padding:16px 18px; margin:18px 0; font-size:15px; }
+.callout b { color:#fff; }
+.foot { margin-top:48px; padding-top:18px; border-top:1px solid var(--line); color:var(--mut); font-size:13px; }
+a { color:var(--cyan); text-decoration:none; }
+code { background:#111827; padding:1px 6px; border-radius:5px; font-size:13px; color:#cdd9e5; }
+.brand { display:flex; align-items:center; gap:14px; margin-bottom:26px; }
+.brand .mk { width:56px; height:56px; border-radius:10px; background:linear-gradient(135deg,var(--green),var(--cyan));
+  display:flex; align-items:center; justify-content:center; font-weight:800; font-size:22px; color:#04120a; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">
+    <div class="mk">MP</div>
+    <div>
+      <h1 style="font-size:30px; margin:0">Morpheus — today</h1>
+      <p class="tag" style="margin:0">a digital possibility engine</p>
+    </div>
+  </div>
+  <p class="lede">Morpheus builds software by describing it, and it <em>builds itself</em> — the planner→coder→reviewer loop is live and shipping <b>13</b> native compile targets today.</p>
+  <p class="sub">The results in one read: what actually ships, what is deferred, and what the numbers really are.</p>
+  <h2>Live</h2>
+  <div class="shots"></div>
+  <h2>Measured</h2>
+  <div class="nums"><div class="num"><div class="v">13</div><div class="l">compile targets</div><div class="s">server/src/lib/compile-targets/ (reality.mjs)</div></div>
+<div class="num"><div class="v">98.7%</div><div class="l">of AI spend is the build pipeline</div><div class="s">measured — MODEL-DECISIONS.md</div></div>
+<div class="num"><div class="v">24</div><div class="l">deck_* tables in Supabase</div><div class="s">the Command Deck's own-data architecture</div></div></div>
+  <h2>Real now</h2>
+  <table><tr><th>What</th><th>Evidence</th></tr><tr><td class="ok">Self-dev build loop</td><td>planner → coder → reviewer edits real files, then verify → push → watch → revert; main sits at 9e4b863.</td></tr>
+<tr><td class="ok">Command Deck + Jarvis</td><td>/deck and /deck/jarvis, brain-dump auto-filing, long-term memory, cross-deck synthesis, 15 widgets.</td></tr>
+<tr><td class="ok">WordPress plugin + embeddable dock</td><td>public/plugin.js → /embed?token=… — dock loader, plugin source, and the dock the plugin prints for an admin.</td></tr>
+<tr><td class="ok">13 native compile targets</td><td>android-apk … windows-exe, incl. 3 audio-plugin routes; docs understated them as '6 platforms'.</td></tr>
+<tr><td class="ok">Operator token (self-dev CLI)</td><td>node scripts/morpheus.mjs whoami|sync|chat|verify|push|merge|smoke — scoped and capped (server/src/lib/operatorToken.js).</td></tr>
+<tr><td class="ok">Merge gate, GitHub-enforced</td><td>main requires guards (no install), lint + build, and render — branch protection, not only merge.js.</td></tr>
+<tr><td class="ok">SEO static surface</td><td>meta/Open Graph/JSON-LD, llms.txt, sitemap.xml, robots.txt — index.html 1.5 KB → 16.8 KB.</td></tr>
+<tr><td class="ok">Billing + metering</td><td>real token metering, pre-call reserve/reconcile, token blocks, and the live 200-credit signup grant.</td></tr>
+<tr><td class="ok">Portable self-hosted bundle</td><td>dist/portable-morpheus.zip built from the current tree, one-command setup + launchers for macOS/Linux/Windows.</td></tr></table>
+  <h2>Not built yet</h2>
+  <table><tr><th>What</th><th>Status</th></tr><tr><td class="no">Priority Compile (paid)</td><td>deferred — needs a Morpheus-owned GitHub org and Actions minutes, a fixed cost paid before revenue.</td></tr>
+<tr><td class="no">The 7-day Google connection wall</td><td>reconnecting buys 7 days then lapses again; the code is fixed (#391) but the consent screen is 'Testing' — a Google Cloud console action.</td></tr>
+<tr><td class="no">Deferred Jarvis vision</td><td>Marketplace distribution, dynamic widgets and connections, auto-deploy — direction only, not built.</td></tr>
+<tr><td class="no">Security items deferred</td><td>rotation of credentials exposed in early logs accepted as 'cross that bridge later'; operator token revocation UI still owed.</td></tr></table>
+  <div class="callout">What ships is the self-hosted core — the build loop, the deck, the dock, native compiles. What is deferred sits behind revenue (Priority Compile) or a third-party gate (Google's 7-day wall).</div>
+  <h2>Where it's going</h2>
+  <p>The 'digital possibility engine' is the destination, not a shipped feature — Jarvis grows toward dynamic widgets and a Marketplace in the order revenue allows.</p>
+  <div class="foot">github.com/robmitchellengineering-hub/morpheus-self-hosted · numbers from node scripts/reality.mjs (2026-10-19) and MODEL-DECISIONS.md · live at morpheus.nz ·  · main <code>uncommitted</code>.</div>
+</div>
+</body>
+</html>

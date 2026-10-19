@@ -1,0 +1,48 @@
+Morpheus — source-available, proprietary
+Copyright (c) 2026 Rob Mitchell. All rights reserved.
+
+READ THIS FIRST: THIS IS NOT AN OPEN-SOURCE LICENCE.
+
+The source code in this repository is PUBLISHED — you may read it, and it is here so
+that anyone can see what Morpheus is and how it works. Publishing it is not a grant of
+any right to use it. No licence is granted except as set out below.
+
+WHAT YOU MAY DO
+
+  1. Read, view and study this source code.
+  2. Run the software as we provide it, through the hosted service at morpheus.nz and
+     through the builds and downloads that service produces for you.
+
+WHAT YOU MAY NOT DO WITHOUT OUR PRIOR WRITTEN PERMISSION
+
+  1. Copy, reproduce or reuse this source code, in whole or in part.
+  2. Modify it, or create derivative works from it.
+  3. Distribute, publish, sublicense, sell, rent or otherwise make it available to
+     anyone — including as part of another product, and including as a hosted service.
+  4. Use it to train, fine-tune or evaluate any machine-learning model.
+  5. Remove or alter this notice or any copyright notice in this repository.
+
+No patent licence is granted, by implication, estoppel or otherwise.
+
+IF YOU WANT TO USE IT, ASK. Commercial licensing, including OEM and white-label terms,
+is available: robmitchellengineering@gmail.com
+
+--- WHAT THIS NOTICE DOES NOT COVER, AND IT MATTERS -----------------------------------
+
+1. APPLICATIONS MORPHEUS GENERATES ARE YOURS. This notice covers the Morpheus software
+   in THIS repository. It does not cover the software Morpheus writes FOR you: the
+   source files, projects, builds and artifacts produced from your own prompts belong to
+   you, and you may use, modify, distribute and sell them however you wish, with no
+   obligation to us. "You own every file" is the promise, and this notice is not an
+   exception to it. It covers the tool, not what the tool makes for you.
+
+2. THIRD-PARTY COMPONENTS KEEP THEIR OWN LICENCES. This repository fetches, pins and
+   links components that are not ours and whose licences are more permissive than this
+   one — among them the CLAP SDK (MIT), the VST3 SDK (MIT), NeuralAmpModelerCore (MIT),
+   clap-wrapper (MIT), RtAudio and RtMidi (MIT-style), the AudioUnitSDK (Apache-2.0),
+   Eigen (MPL-2.0) and nlohmann/json (MIT), together with the npm, pip and system
+   packages a build installs. Their terms govern their code and are unaffected by the
+   notice above. This list names the principal components a plugin build fetches; it is
+   not an exhaustive inventory of every dependency's licence, and nothing here narrows
+   or replaces any of them. Where a file carries its own copyright header, that header
+   governs that file.

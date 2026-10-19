@@ -1,0 +1,1657 @@
+// Morpheus — self-hosted Postgres schema (Prisma)
+//
+// Field names deliberately mirror the original Base44 entity schemas
+// (base44/entities/*.jsonc in the project source) — snake_case, same
+// property names — so the 34 ported function handlers and the existing
+// React frontend (which already reads fields like `project.compile_target`,
+// `file.project_id`, `msg.role`) needed no field-name translation layer.
+//
+// Every entity carries id / created_by_id / created_date / updated_date,
+// matching Base44's implicit row metadata and its row-level-security model
+// (RLS keyed on created_by_id, replicated in src/entities.js).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── USERS & SETTINGS ─────────────────────────────────────────────
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  password_hash String
+  full_name     String?
+  role          String   @default("user") // user | admin
+  google_id     String?  @unique
+  email_verified Boolean @default(false)
+  otp_code      String?
+  otp_expires   DateTime?
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  // Token System Build Plan Step 1: every new account starts with 200 free
+  // signup credits, usable on Default mode with zero setup.
+  // Step 3 (2026-09-01, see lib/billing.js): pre-call reserve + reconcile
+  // enforcement now actually spends this. Decimal, not Int -- at $0.005/credit
+  // (the decided $5-per-1,000-credits rate) a single cheap chat turn can cost
+  // a fraction of a credit, and rounding that to 0 would silently undercharge.
+  // Scale 4 gives resolution far finer than any real per-call cost. Billing
+  // exemption for admins reuses the existing `role` column above (role ===
+  // 'admin').
+  credit_balance  Decimal  @default(200) @db.Decimal(14, 4)
+
+  // Free-usage grant, separate from `role` (2026-09-12, Rob: wanted a way to
+  // give someone free usage "withought giving full admin access" — role
+  // === 'admin' was this app's only billing exemption until now, but it
+  // also grants the full Admin Panel). Checked alongside role in ai.js's
+  // isExempt logic; grants no other admin capability anywhere.
+  billing_exempt  Boolean  @default(false)
+
+  projects        Project[]
+  project_files   ProjectFile[]
+  chat_messages   ChatMessage[]
+  file_snapshots  FileSnapshot[]
+  usage_records   UsageRecord[]
+  usage_events    UsageEvent[]
+  credit_transactions CreditTransaction[]
+  templates       Template[]
+  purchases       Purchase[]
+  settings        UserSettings?
+  backend_configs BackendConfig[]
+  rebuild_docs    RebuildDoc[]
+  updates_plans   UpdatesPlan[]
+  cost_snapshots  CostSnapshot[]
+  self_dev_manuals SelfDevManual[]
+  self_dev_features SelfDevFeature[]
+  self_dev_decisions SelfDevDecision[]
+  project_assets   ProjectAsset[]
+  plugin_connections PluginConnection[]
+  widget_tokens    WidgetToken[]
+  capability_grants AppCapabilityGrant[]
+  device_tokens    DeviceToken[]
+  github_connection GithubConnection?
+  google_drive_connection GoogleDriveConnection?
+  deck_google_connection DeckGoogleConnection?
+  search_console_connection SearchConsoleConnection?
+  site_maintenance_policies SiteMaintenancePolicy[]
+  site_uptime_checks SiteUptimeCheck[]
+
+  // Command Deck (internal codename "Deck" — see the models below)
+  deck_jarvis_messages DeckJarvisMessage[]
+  deck_jarvis_memory   DeckJarvisMemory?
+  deck_dump_items    DeckDumpItem[]
+  deck_people        DeckPerson[]
+  deck_tasks         DeckTask[]
+  deck_consignment_items DeckConsignmentItem[]
+  deck_repair_jobs   DeckRepairJob[]
+  deck_repair_files  DeckRepairFile[]
+  deck_murbah_opportunities DeckMurbahOpportunity[]
+  deck_inbox_items   DeckInboxItem[]
+  deck_gmail_seen_messages DeckGmailSeenMessage[]
+  deck_strategy_notes DeckStrategyNote[]
+  deck_knowledge_notes DeckKnowledgeNote[]
+  deck_life_streams  DeckLifeStream[]
+  deck_life_stream_notes DeckLifeStreamNote[]
+  deck_life_files DeckLifeFile[]
+  deck_energy_log_entries DeckEnergyLogEntry[]
+  deck_focus_entries DeckFocusEntry[]
+  deck_play_credits DeckPlayCredit[]
+  deck_play_scores DeckPlayScore[]
+  deck_widget_instances DeckWidgetInstance[]
+  deck_business_profile DeckBusinessProfile?
+  deck_widget_builds DeckWidgetBuild[]
+
+  // Owner/Admin Control Panel (Feature Backlog #8)
+  platform_settings_updated PlatformSetting[]
+  admin_audit_logs          AdminAuditLog[]
+  maintenance_tasks         MaintenanceTask[]
+
+  @@map("users")
+}
+
+model UserSettings {
+  id             String   @id @default(uuid())
+  created_by_id  String   @unique
+  user           User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  ai_mode        String   @default("default") // default | custom
+  ai_base_url    String?
+  ai_api_key     String?  // encrypted at rest (src/crypto.js)
+  ai_model       String?
+  planner_model  String?
+  coder_model    String?
+  reviewer_model String?
+  diagnosis_model String?
+
+  connections    String?  // JSON string: hosting platform credentials, encrypted at rest
+
+  tts_mode       String   @default("default")
+  tts_engine     String   @default("elevenlabs")
+  tts_api_key    String?  // encrypted at rest
+  tts_voice_id   String?
+  tts_endpoint   String?
+
+  // Settings → Appearance "Personality" toggle (2026-09-02). When true
+  // (default), Morpheus's Matrix-mentor voice/metaphors are in the system
+  // prompt as usual. When false, chatWithMorpheus.js swaps in a plain,
+  // no-roleplay system prompt instead -- same technical rules and build
+  // instructions, just no character voice. See SYSTEM_PROMPT_PLAIN there.
+  personality_enabled Boolean @default(true)
+
+  created_date   DateTime @default(now())
+  updated_date   DateTime @updatedAt
+
+  @@map("user_settings")
+}
+
+model GithubConnection {
+  id            String   @id @default(uuid())
+  created_by_id String   @unique
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+  login         String
+  access_token  String   // encrypted at rest
+  scope         String?
+
+  // Only populated when the GitHub OAuth App has its "Token expiration"
+  // optional feature turned on (8hr access tokens + refresh tokens). All
+  // three are null for a connection made while that feature is off, since
+  // GitHub's token exchange then returns a non-expiring access_token with
+  // no refresh_token at all. See lib/github.js's getGithubConnection for
+  // the silent-refresh logic that uses these.
+  refresh_token             String?  // encrypted at rest
+  expires_at                DateTime?
+  refresh_token_expires_at  DateTime?
+
+  created_date  DateTime @default(now())
+
+  @@map("github_connections")
+}
+
+model GoogleDriveConnection {
+  id            String   @id @default(uuid())
+  created_by_id String   @unique
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+  drive_email   String
+  access_token  String   // encrypted at rest (src/crypto.js)
+  scope         String?
+
+  // Requested with access_type=offline&prompt=consent (login itself never
+  // sets these) specifically so this exchange returns a refresh_token --
+  // see lib/googleDrive.js's getGoogleDriveConnection for the silent-
+  // refresh logic that uses these, mirroring GithubConnection's shape.
+  refresh_token String   // encrypted at rest
+  expires_at    DateTime?
+
+  created_date  DateTime @default(now())
+
+  @@map("google_drive_connections")
+}
+
+// Command Deck's own Google connection — deliberately separate from
+// GoogleDriveConnection above (that one is scoped to drive.file for
+// unrelated Project file storage, Feature Backlog #12). This one covers
+// Gmail sync, Calendar sync, a Deck-specific Drive backup, and Jarvis-driven
+// Doc creation — a different purpose with different (more sensitive)
+// scopes, so it gets its own row/table rather than tangling two features'
+// revoke/reconnect behavior together.
+model DeckGoogleConnection {
+  id            String   @id @default(uuid())
+  created_by_id String   @unique
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+  google_email  String
+  access_token  String   // encrypted at rest (src/crypto.js)
+  scope         String?
+
+  // Same access_type=offline&prompt=consent requirement as
+  // GoogleDriveConnection — see lib/deckGoogle.js's getDeckGoogleConnection.
+  refresh_token String   // encrypted at rest
+  expires_at    DateTime?
+
+  // Drive backup (backupDeckToDrive.js / restoreDeckFromDrive.js) — the
+  // Drive folder holding command-deck-backup.json, created on first backup,
+  // and when that backup last ran, shown as "Data vault status" in Settings.
+  backup_folder_id String?
+  last_backup_at   DateTime?
+
+  created_date  DateTime @default(now())
+
+  @@map("deck_google_connections")
+}
+
+// Google Search Console access — the account's own verified properties, so the
+// SEO surface can show REAL queries, clicks, impressions, CTR and average
+// position instead of estimates. Read-only (`webmasters.readonly`).
+//
+// Deliberately its own connection rather than another scope on
+// GoogleDriveConnection: the consent is unrelated to file storage, it is useful
+// to someone with no Drive connection at all, and folding it in would force
+// every Drive user to re-consent for a scope their feature does not use. Same
+// reasoning as DeckGoogleConnection below it.
+//
+// The public API exposes Search Analytics, Sitemaps, Sites and URL Inspection —
+// there is NO links/backlinks resource, so "who links to you" cannot be answered
+// from here and must not be faked; the UI deep-links to Search Console's own
+// Links report instead.
+model SearchConsoleConnection {
+  id            String   @id @default(uuid())
+  created_by_id String   @unique
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+  gsc_email     String
+  access_token  String   // encrypted at rest (src/crypto.js)
+  scope         String?
+
+  // access_type=offline&prompt=consent, as with the other Google connections —
+  // search performance is read long after the connect, so this needs a refresh
+  // token and the silent-refresh handling that goes with it.
+  refresh_token String   // encrypted at rest
+  expires_at    DateTime?
+
+  // The property this account chose to read: a URL-prefix property
+  // ("https://valiantmusic.com.au/") or a Domain property
+  // ("sc-domain:valiantmusic.com.au"). Null is a real state — a verified account
+  // can hold several properties, and a freshly connected one has chosen none.
+  property      String?
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@map("search_console_connections")
+}
+
+// What Morpheus may do to a site unprompted, and when.
+//
+// Everything here is OFF until the owner turns it on, and applying is separate
+// from scanning on purpose: an owner who asked to be TOLD what is wrong has not
+// asked us to change their site. Nothing may infer the second from the first.
+//
+// Core MAJOR updates are never automatic. `allow_core_major_manual` exists so
+// that is stated rather than merely absent — the code refuses to treat it as an
+// automatic action whatever it is set to, and scripts/verify-site-maintenance.mjs
+// asserts that.
+model SiteMaintenancePolicy {
+  id            String   @id @default(uuid())
+  created_by_id String
+  owner         User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+  project_id    String   @unique
+  project       Project  @relation(fields: [project_id], references: [id], onDelete: Cascade)
+
+  scan_enabled  Boolean  @default(false)
+  // 1-28: a day every month has, so a monthly run cannot skip February.
+  day_of_month  Int      @default(1)
+  hour_utc      Int      @default(3)
+
+  apply_plugins    Boolean @default(false)
+  apply_themes     Boolean @default(false)
+  apply_core_minor Boolean @default(false)
+  // Never automatic — see the note above.
+  allow_core_major_manual Boolean @default(true)
+
+  last_scan_at  DateTime?
+  // JSON: what the last run found, and what it did.
+  last_result   String?  @db.Text
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@map("site_maintenance_policies")
+}
+
+// ── PROJECTS ──────────────────────────────────────────────────────
+
+model Project {
+  id             String   @id @default(uuid())
+  created_by_id  String
+  owner          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  name           String
+  description    String?
+  status         String   @default("init")       // init | building | ready
+  compile_target String   @default("source")      // source|windows-exe|mac-app|linux-binary|android-apk|ios-app|python-package|web-app|rpi-distro|linux-distro|arduino-firmware
+  project_type   String   @default("frontend")    // frontend | backend
+  polish_ui      Boolean  @default(false)
+
+  // Rolling "critical logic" memory for long-lived projects — see
+  // lib/contextSummary.js. Chat history sent to the AI is bounded to the
+  // last 20/10 messages (matches the original app; see the 2026-08-26
+  // audit for why unbounded history was reverted), so this periodically-
+  // updated, compressed summary of everything older than that window is
+  // what keeps requirements/decisions from a project's early messages from
+  // being silently forgotten once it runs long. context_summary_message_count
+  // tracks how many messages have been folded in so far, so the next
+  // update knows where to resume.
+  context_summary               String? @db.Text
+  context_summary_message_count Int     @default(0)
+
+  // "owner/repo" of the GitHub repo this project is connected to — set by
+  // uploadToGithub.js / importFromGithub.js. Media Library's "add from
+  // device" commits assets straight into this repo (public/assets/*), and
+  // it's where a static site actually gets deployed from.
+  github_repo    String?
+  // Optional per-construct GitHub token (encrypted at rest, src/crypto.js).
+  // For client work: when the client's repo isn't covered by the owner's
+  // global GitHub connection, they hand over a fine-grained PAT scoped to
+  // that one repo and it's stored here. getGithubToken(userId, {projectId})
+  // prefers this over the global connection.
+  github_token   String?  @db.Text
+
+  // Commit SHA of the base branch this project's file mirror was last synced
+  // from (or successfully pushed/merged to). Read by self-dev's H9 drift guard
+  // (lib/selfDevDrift.js) so a push refuses to run against a STALE mirror
+  // instead of deleting whatever landed upstream — see KNOWN-HAZARDS.md H9.
+  // Null means "unknown": pre-migration workspaces, where the guard falls back
+  // to its deletion-shape check. Ships with
+  // server/prisma/selfdev-add-synced-commit.sql (hazard H8).
+  synced_commit  String?
+
+  // User-Choice Cloud Storage (Feature Backlog #12), Phase 1. "postgres" is
+  // every project's existing, unchanged behavior. "drive" means this
+  // project's files are also mirrored to the owner's connected Google
+  // Drive (drive_folder_id, created on first push) -- Postgres still holds
+  // full content for every project regardless of this field in Phase 1;
+  // see server/src/functions/pushProjectToDrive.js / pullProjectFromDrive.js.
+  storage_mode     String  @default("postgres") // postgres | drive
+  drive_folder_id  String?
+
+  maintenance_policy SiteMaintenancePolicy?
+
+  files          ProjectFile[]
+  chat_messages  ChatMessage[]
+  snapshots      FileSnapshot[]
+  usage_records  UsageRecord[]
+  templates      Template[]
+  backend_config BackendConfig?
+  self_dev_features SelfDevFeature[]
+  self_dev_decisions SelfDevDecision[]
+  assets         ProjectAsset[]
+  plugin_connections PluginConnection[]
+  widget_tokens  WidgetToken[]
+  capability_grants AppCapabilityGrant[]
+  site_uptime_checks SiteUptimeCheck[]
+
+  created_date   DateTime @default(now())
+  updated_date   DateTime @updatedAt
+
+  @@map("projects")
+}
+
+model ProjectFile {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+  project_id    String
+  project       Project  @relation(fields: [project_id], references: [id], onDelete: Cascade)
+
+  path          String
+  content       String   @db.Text
+  file_url      String?  // storage URL for large/binary files; content holds a text preview only
+  language      String   @default("text")
+  // git blob sha of the upstream content this row was last synced from, so a
+  // self-dev sync can tell "upstream moved on" (safe to overwrite) from "edited
+  // here and not pushed" (must not be). Nullable on purpose — NULL means
+  // provenance unknown, which lib/selfDevSyncSafety.js treats conservatively.
+  // DDL: server/prisma/selfdev-add-file-synced-sha.sql (H8).
+  synced_sha    String?
+
+  // Set only for a project with storage_mode="drive" -- the mirrored
+  // Drive file's id and Drive's own modifiedTime, used exactly like
+  // syncProjectFromGithub.js's git-blob-sha comparison for incremental
+  // diffing (pullProjectFromDrive.js only re-fetches a file whose Drive
+  // modifiedTime differs from what's stored here).
+  drive_file_id       String?
+  drive_modified_time DateTime?
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@unique([project_id, path])
+  @@map("project_files")
+}
+
+model ChatMessage {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+  project_id    String
+  project       Project  @relation(fields: [project_id], references: [id], onDelete: Cascade)
+
+  role          String   // user | morpheus
+  content       String   @db.Text
+
+  created_date  DateTime @default(now())
+
+  @@map("chat_messages")
+}
+
+model FileSnapshot {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+  project_id    String
+  project       Project  @relation(fields: [project_id], references: [id], onDelete: Cascade)
+
+  label         String?
+  files         String?  @db.Text // inline JSON preview; full snapshot offloaded to file_url when large
+  file_url      String?
+
+  created_date  DateTime @default(now())
+
+  @@map("file_snapshots")
+}
+
+// ── USAGE ─────────────────────────────────────────────────────────
+
+model UsageRecord {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  action_type   String   // chat_build | chat_simple | autonomous_step | compile | diagnosis | ...
+  credits       Int      @default(1)
+  project_id    String?
+  project       Project? @relation(fields: [project_id], references: [id], onDelete: SetNull)
+  project_name  String?
+  metadata      String?  @db.Text
+
+  created_date  DateTime @default(now())
+
+  @@map("usage_records")
+}
+
+// ── TOKEN SYSTEM / BILLING METERING ─────────────────────────────────
+// TOKEN-SYSTEM-BUILD-PLAN.md Step 1 (schema) + Step 2 (real metering).
+// UsageRecord above is the older, bucketed-*estimate* credit-cost log
+// (lib/costEstimate.js's static per-action-type token guesses) that already
+// drives the existing Cost Tracker page -- left in place, unchanged.
+// UsageEvent below is new: one row per actual AI call, with real token
+// counts from the provider's own response, logged directly inside
+// invokeAI() (server/src/ai.js) so every caller gets metering for free.
+// Deliberately NOT wired to any credit deduction yet -- credits_charged
+// stays 0 until Step 3 (pre-call reserve/reconcile enforcement) is built;
+// this step only makes usage data honest, it doesn't change what anyone
+// experiences.
+
+model UsageEvent {
+  id              String   @id @default(uuid())
+  created_by_id   String
+  user            User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  role            String?  // planner | coder | reviewer | diagnosis | null for role-less calls
+  provider        String   // platform | custom | morpheus-cloud | unconfigured
+  model_id        String   // the resolved model actually used (post alias-resolution)
+
+  input_tokens    Int      @default(0)
+  output_tokens   Int      @default(0)
+  cost_usd        Float    @default(0) // underlying provider cost, computed from real token counts
+  // Retail credits actually deducted for this call (0 for exempt/admin
+  // accounts -- exempt means "don't charge," not "don't meter", see
+  // lib/billing.js). Decimal to match User.credit_balance's precision.
+  credits_charged Decimal  @default(0) @db.Decimal(14, 4)
+
+  // ── observability (2026-09-27) ─────────────────────────────────────────────
+  // What this row could never answer before: WHICH call site it was, whether the call
+  // SUCCEEDED, and how long it took. A call that throws before the provider answers writes no
+  // row at all, so a failure rate was not measurable — every audit this project ran had to
+  // infer truncation from `output_tokens == maxTokens` and attribute calls by timestamp joins.
+  // Nullable on purpose: null means "not recorded", which is honest for every existing row.
+  task            String?  // the call site's own label, e.g. 'deck-insight', 'schema_mapping'
+  status          String?  // 'ok' | 'error' (null for rows written before this existed)
+  duration_ms     Int?
+
+  project_id      String?  // best-effort correlation only, not a hard FK -- not every
+                            // invokeAI() call site has a project in scope (e.g. Architect)
+
+  created_date    DateTime @default(now())
+
+  @@index([created_by_id])
+  @@map("usage_events")
+}
+
+// Admin-editable per-model $/M-token pricing + markup multiplier. Genuinely
+// new -- TOKEN-SYSTEM-BUILD-PLAN.md describes a table like this as "already
+// exists, built for the self-updating model/pricing research system," but
+// no such table or system exists anywhere in this codebase (grepped clean);
+// most likely a stale assumption carried over from earlier planning. This
+// table is what Step 4's admin pricing UI (not yet built) will edit; until
+// populated, getModelRate() in lib/modelPricing.js falls back to the
+// existing static MODEL_PRICING table in lib/costEstimate.js.
+model ModelCatalogEntry {
+  id                 String   @id @default(uuid())
+  model_id           String   @unique
+  provider           String?  // openai | deepseek | gemini | anthropic | custom | ...
+  input_price_per_m  Float?   // $ per 1M input tokens; null = use costEstimate.js fallback
+  output_price_per_m Float?   // $ per 1M output tokens
+  markup_multiplier  Float    @default(2.0) // admin-editable; 2.0 = flat 2x, BUSINESS-STRATEGY.md default
+  active             Boolean  @default(true)
+
+  created_date       DateTime @default(now())
+  updated_date       DateTime @updatedAt
+
+  @@map("model_catalog_entries")
+}
+
+// Token-block purchases (one-off Stripe Checkout -- no subscriptions, per
+// the decided access model). Not wired to any purchase UI yet (Step 6, not
+// built) -- the table exists now so this migration doesn't need a follow-up
+// once that ships, and so the $1 signup-credit recoup gross-up (charged
+// into a user's first real purchase) has somewhere to record itself.
+//
+// Block denominations decided 2026-09-01 (see lib/billing.js's TOKEN_BLOCKS
+// for the full worked-out numbers): $1.87 / $5 / $10 intended net value ->
+// 374 / 1,000 / 2,000 credits at the $5-per-1,000 rate, Stripe-fee-grossed-up
+// to $2.23 / $5.46 / $10.61 actually charged. Not yet wired to a purchase
+// route -- Step 6 (frontend + Checkout) still needs building.
+model CreditTransaction {
+  id                 String   @id @default(uuid())
+  created_by_id      String
+  user               User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  credits            Decimal  @db.Decimal(14, 4) // credits granted by this transaction
+  amount_usd         Float    @default(0) // what the customer was actually charged (post Stripe-fee gross-up)
+  intended_net_usd   Float    @default(0) // the block's face value before the fee gross-up
+  stripe_session_id  String?  @unique
+  status             String   @default("paid") // paid | refunded
+  is_first_purchase  Boolean  @default(false) // true if the signup-credit recoup gross-up applied
+
+  created_date       DateTime @default(now())
+
+  @@map("credit_transactions")
+}
+
+// ── OWNER/ADMIN CONTROL PANEL (Feature Backlog #8) ──────────────────
+// Access control decision (2026-09-01): role column, not a hardcoded email
+// -- reuses the User.role 'admin' value that already gates self-dev and
+// synthesizeUpdatesPlan (see auth.js's requireAdmin + functions.routes.js's
+// ADMIN_FUNCTIONS set), rather than introducing a separate 'owner' tier.
+// Auth hardening decision: role-gated only for v1 (same bar as the existing
+// admin surfaces) -- no additional step-up auth yet; revisit if this ever
+// needs to protect more than one admin account.
+
+// Generic admin-editable key/value store, read with a short in-memory cache
+// (see lib/platformSettings.js) so hot paths like invokeAI() never take a
+// DB round-trip on every call. Flagship use: default_<role>_model /
+// default_model keys let ai.js's resolveEndpoint() pick a platform-wide
+// default model without a code deploy -- see ai.js for exactly where this
+// sits in the existing env-var/per-user-setting priority chain (additive
+// only; an empty table changes nothing). Also the general-purpose home for
+// any future admin-editable flag ("General config/feature flags" in the
+// backlog) -- not every key written here necessarily has a live consumer
+// yet, same as an unused env var.
+model PlatformSetting {
+  key           String   @id
+  value         String
+  updated_by_id String?
+  updated_by    User?    @relation(fields: [updated_by_id], references: [id], onDelete: SetNull)
+  updated_date  DateTime @updatedAt
+
+  @@map("platform_settings")
+}
+
+// Every change made through the admin panel (model routing swaps, model
+// catalog/pricing edits, other settings) gets one row here -- decided
+// 2026-09-01: log everything, since audit trail is cheap now and far more
+// valuable to have from day one than to bolt on later once there's
+// financial/model-routing history worth reconstructing. Deliberately not
+// exposed through the generic entity CRUD engine (server/src/entities.js)
+// -- an audit log that its own subject can edit or delete isn't much of an
+// audit log -- so this is written only from admin.routes.js's own handlers
+// and read via a dedicated GET endpoint.
+model AdminAuditLog {
+  id           String   @id @default(uuid())
+  admin_id     String?
+  admin        User?    @relation(fields: [admin_id], references: [id], onDelete: SetNull)
+  action       String   // e.g. 'update_setting', 'update_model_catalog'
+  details      String?  @db.Text // JSON-stringified {key, oldValue, newValue} or similar
+  created_date DateTime @default(now())
+
+  @@map("admin_audit_log")
+}
+
+// Lightweight ops checklist -- the "Maintenance punch-list" surface from the
+// backlog (rotating credentials, clearing stale GitHub PATs, pending
+// migrations, etc.) that's been happening ad hoc up to this session. Low-
+// stakes enough (ticking off a to-do) that it goes through the existing
+// generic entity CRUD engine like any other owner-scoped entity, rather
+// than bespoke admin.routes.js handlers -- entities.js's scope() already
+// gives admins unrestricted access with no owner filter.
+model MaintenanceTask {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  title         String
+  done          Boolean  @default(false)
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@map("maintenance_tasks")
+}
+
+// ── MARKETPLACE ───────────────────────────────────────────────────
+
+model Template {
+  id                String     @id @default(uuid())
+  created_by_id     String
+  author            User       @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+  project_id        String?
+  project           Project?   @relation(fields: [project_id], references: [id], onDelete: SetNull)
+
+  name              String
+  description       String?
+  long_description  String?    @db.Text
+  author_name       String?
+  author_id         String?
+  files             String     @db.Text // full project files JSON at publish time
+  artifact_files    String?    @db.Text // optional JSON array of [{name, file_url}] —
+                                         // compiled binaries (apk/exe/etc.) a seller chose
+                                         // to attach alongside the source in `files`, pulled
+                                         // from the project's own `_compiled/` ProjectFile
+                                         // rows at publish time. Null/empty = source only.
+  icon              String?
+  screenshots       String?    @db.Text // JSON array of URLs
+  compile_target    String     @default("source")
+  tags              String?    // comma-separated
+  category          String     @default("general")
+  install_count     Int        @default(0)
+  file_count        Int        @default(0)
+  price             Float      @default(0) // dollars (e.g. 9.99), same convention as
+                                            // the original Base44 Template entity; 0 = free
+  stripe_product_id String?
+  stripe_price_id   String?
+
+  purchases         Purchase[]
+
+  created_date      DateTime   @default(now())
+  updated_date      DateTime   @updatedAt
+
+  @@map("templates")
+}
+
+model Purchase {
+  id                 String   @id @default(uuid())
+  created_by_id      String
+  buyer              User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  // Nullable + SetNull (not Cascade): matches the original's behavior of a
+  // seller deleting their account removing their Templates but leaving
+  // buyers' own Purchase/receipt records intact (just orphaned from the
+  // template row) rather than destroying other customers' purchase history.
+  template_id        String?
+  template            Template? @relation(fields: [template_id], references: [id], onDelete: SetNull)
+  template_name      String?
+  buyer_id           String
+  buyer_email        String?
+  seller_id          String
+  amount             Float    @default(0) // dollars, same convention as the original
+  platform_cut       Float    @default(0)
+  seller_cut         Float    @default(0)
+  stripe_session_id  String   @unique
+  status             String   @default("paid") // paid | refunded
+
+  created_date       DateTime @default(now())
+
+  @@map("purchases")
+}
+
+// One-off "keep the lights on" donations from the landing page — deliberately
+// NOT tied to a User (base44's donate widget works for anonymous, pre-login
+// visitors, and this mirrors that). Recorded by stripeWebhook.js's
+// metadata.type === 'donation' branch, separately from Purchase so donation
+// totals never get mixed into marketplace sales/payout reporting.
+model Donation {
+  id                String   @id @default(uuid())
+  amount            Float    @default(0) // dollars
+  donor_email       String?
+  stripe_session_id String   @unique
+  status            String   @default("paid") // paid | refunded
+
+  created_date      DateTime @default(now())
+
+  @@map("donations")
+}
+
+// Landing page's public "SUGGEST AN IMPROVEMENT" box — no login required,
+// same as base44's version. Deliberately not tied to a User for the same
+// reason Donation isn't: anonymous, pre-login visitors can submit these.
+// Feeds base44's admin-only "Morpheus Updates Plan" AI synthesis tool,
+// which isn't built yet on the self-hosted side — this table is the
+// prerequisite for it.
+model Feedback {
+  id           String   @id @default(uuid())
+  type         String   @default("feature") // feature | bug
+  message      String   @db.Text
+  email        String?
+  status       String   @default("new") // new | reviewed | actioned
+
+  created_date DateTime @default(now())
+
+  @@map("feedback")
+}
+
+// ── BACKEND ARCHITECT ────────────────────────────────────────────
+
+model BackendConfig {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+  project_id    String   @unique
+  project       Project  @relation(fields: [project_id], references: [id], onDelete: Cascade)
+
+  custom_domain String?
+  api_keys      String?  @db.Text // JSON array, encrypted at rest
+  deploy_platform String?
+  deploy_url    String?
+  deploy_status String?
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@map("backend_configs")
+}
+
+// ── DOCS ──────────────────────────────────────────────────────────
+
+model RebuildDoc {
+  id              String   @id @default(uuid())
+  created_by_id   String
+  user            User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  version         String
+  content         String   @db.Text // truncated preview
+  content_size    Int      @default(0)
+  file_url        String?
+
+  created_date    DateTime @default(now())
+  updated_date    DateTime @updatedAt
+
+  @@map("rebuild_docs")
+}
+
+// "SELF-DEV & ADMIN MANUAL" — an AI-written operator's guide to running
+// Morpheus through the Self-Dev workspace and Admin Control Panel (Rob,
+// 2026-09-03: "give me a manual... that gets updated when anything to do
+// with self dev or admin get updated"). Unlike RebuildDoc above (a static,
+// hand-authored architecture dump), generateSelfDevManual.js reads the
+// ACTUAL CURRENT SOURCE of the self-dev/admin-relevant files and has an LLM
+// write the manual from them each time — so "updated when the code changes"
+// is true by construction rather than something a human has to remember to
+// edit. version/content/content_size/file_url mirror RebuildDoc's
+// single-row-per-admin upsert pattern exactly (see generateRebuildDoc.js).
+// trigger records why the last regeneration happened ('manual' — the admin
+// clicked REGENERATE, or 'auto:push' — pushSelfDevToGithub.js detected the
+// push touched one of the source files this doc is built from and
+// regenerated automatically, with no button click needed). source_hash is a
+// hash of the concatenated source files at generation time, kept so the UI
+// can show whether the current doc still matches the latest self-dev
+// push without re-running the (costly) LLM call just to check.
+model SelfDevManual {
+  id              String   @id @default(uuid())
+  created_by_id   String
+  user            User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  version         String
+  content         String   @db.Text // truncated preview
+  content_size    Int      @default(0)
+  file_url        String?
+  trigger         String?  // 'manual' | 'auto:push'
+  source_hash     String?
+
+  created_date    DateTime @default(now())
+  updated_date    DateTime @updatedAt
+
+  @@map("self_dev_manuals")
+}
+
+// Persistent multi-step feature plan for self-dev (SELF-DEV-V2 A1). A real
+// feature ("add project comments") spans several self-dev turns — schema +
+// routes + function + components + wiring. Without this, every turn re-derives
+// intent from one message and can contradict an earlier step. One `active`
+// feature per self-dev project at a time; chatWithMorpheus.js gives the planner
+// the goal + step list + which step is active on every build turn, and the
+// operator marks a step done from the FEATURE panel (planSelfDevFeature.js /
+// updateSelfDevFeature.js). `steps` is a JSON string (the codebase stores
+// structured data as Text, not Prisma Json — see Project.context_summary):
+//   [{ n, title, status: 'pending'|'active'|'done', ref?, note? }]
+model SelfDevFeature {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+  project_id    String
+  project       Project  @relation(fields: [project_id], references: [id], onDelete: Cascade)
+
+  title         String
+  goal          String   @db.Text
+  steps         String   @db.Text
+  status        String   @default("active") // active | done | abandoned
+
+  // 2026-09-17: null (every existing/normal self-dev feature) = today's
+  // unrestricted behavior, unchanged. Set only for a feature created through
+  // a scoped build path (e.g. a Jarvis-triggered Command Deck widget build)
+  // to name which enginePolicy.js policy restricts what files that build may
+  // touch — see selfDevFeature.js's featureContextBlock() and
+  // chatWithMorpheus.js's write-scope threading.
+  scope_policy  String?
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@map("self_dev_features")
+}
+
+// Decisions log for self-dev (Command Deck Tier 2 #7). After every self-dev
+// change that ships, the planner's one-line "what changed / why" is recorded
+// here, and the last ~8 entries are fed back into the planner's context on the
+// next build turn — so it builds on past decisions instead of contradicting
+// them. Pairs with KNOWN-HAZARDS.md: hazards say "don't repeat this break",
+// decisions say "here's why the code is the way it is". `ref` is stamped with
+// the PR/commit once the change lands (pushSelfDevToGithub / mergeSelfDevPr).
+model SelfDevDecision {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+  project_id    String
+  project       Project  @relation(fields: [project_id], references: [id], onDelete: Cascade)
+
+  summary       String   @db.Text // what changed
+  rationale     String   @db.Text // why
+  ref           String?            // PR #N or commit sha, stamped on land
+
+  created_date  DateTime @default(now())
+
+  @@index([project_id, created_date])
+  @@map("self_dev_decisions")
+}
+
+// AI-synthesized "MORPHEUS UPDATES PLAN" — admin-only, ranks all Feedback
+// rows into a prioritized, actionable plan. base44's live version regens
+// this on demand via a "SYNTHESIZE PLAN" button; mirrors RebuildDoc's
+// single-row-per-admin upsert pattern above. Backend enforcement is via
+// requireAdmin in functions.routes.js's ADMIN_FUNCTIONS set — not just a
+// frontend route guard, unlike the older self-documentation functions
+// (generateRebuildDoc et al.), which are frontend-gated only (known,
+// flagged gap — see project notes).
+model UpdatesPlan {
+  id              String   @id @default(uuid())
+  created_by_id   String
+  user            User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  content         String   @db.Text // the synthesized plan, markdown
+  feedback_count  Int      @default(0) // how many Feedback rows fed this run
+
+  created_date    DateTime @default(now())
+  updated_date    DateTime @updatedAt
+
+  @@map("updates_plans")
+}
+
+// Admin-only "COST TRACKER" page (src/pages/CostTracker.jsx) — a running
+// tally of what it actually costs to host and run Morpheus, checked by hand
+// against each provider's billing dashboard (Netlify, domain registrar,
+// Northflank, Supabase, the LLM key, Stripe, etc.) since nothing in this
+// stack exposes a live billing API to poll. One row, upserted on save, same
+// single-row-per-admin pattern as UpdatesPlan/RebuildDoc above. Reachable
+// only via the ProtectedRoute adminOnly-guarded /cost-tracker route and the
+// generic entity CRUD engine's owner-scoping (server/src/entities.js) — a
+// non-admin visiting the route would only ever see/create their own empty
+// row, never another user's figures.
+model CostSnapshot {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  items         String   @db.Text // JSON array: [{service, category, monthly, annual, tier, flag, note}]
+  summary       String?  @db.Text // free-text notes (watch-list items, pending confirmations, etc.)
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@map("cost_snapshots")
+}
+
+// Media Library (2026-09-09) — a project's content assets (product photos,
+// event posters, self-made ads, media). ZERO CUSTODY: Morpheus stores only
+// the url + caption, never the bytes. `source:'url'` = the operator pasted a
+// public link they host themselves; `source:'repo'` = uploaded from device
+// and committed straight into the project's own GitHub repo
+// (public/assets/*, via github.js createOrUpdateFile) — the buffer is never
+// persisted anywhere in Morpheus. The coder gets the url list as context so
+// it writes real <img src> instead of placeholders. See MediaPanel.jsx.
+model ProjectAsset {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+  project_id    String
+  project       Project  @relation(fields: [project_id], references: [id], onDelete: Cascade)
+
+  name          String                       // operator-facing label
+  kind          String   @default("image")   // image | video | audio | pdf | font | other
+  source        String   @default("url")     // url | repo
+  url           String                       // what the coder writes into the code ("/assets/x.jpg" for repo, absolute for url)
+  preview_url   String?                      // resolvable URL for the panel thumbnail + preview build (raw.githubusercontent for repo assets)
+  repo_path     String?                      // path in github_repo, for delete (repo source only)
+  alt           String?
+  width         Int?
+  height        Int?
+  size          Int?
+
+  created_date  DateTime @default(now())
+
+  @@index([project_id, created_date])
+  @@map("project_assets")
+}
+
+// Connection to a Morpheus WordPress plugin on the operator's own site —
+// { site URL, shared signing secret }. Lets the Store panel drive
+// WooCommerce/content actions on the site through the plugin's /store
+// endpoint, and (later) the deploy webhook. Secret encrypted at rest
+// (src/crypto.js). One connection per (project, kind).
+model PluginConnection {
+  id             String   @id @default(uuid())
+  created_by_id  String
+  owner          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+  project_id     String
+  project        Project  @relation(fields: [project_id], references: [id], onDelete: Cascade)
+
+  kind           String   @default("wordpress")
+  site_url       String
+  webhook_secret String   @db.Text          // encrypted at rest
+  repo           String?                     // owner/repo the plugin's Deploy module targets, if set
+  meta           String?  @db.Text           // JSON — last status, cached context, etc.
+
+  created_date   DateTime @default(now())
+  updated_date   DateTime @updatedAt
+
+  @@unique([project_id, kind])
+  @@map("plugin_connections")
+}
+
+// ── PER-APP CAPABILITY GRANTS ──────────────────────────────────────
+// One row says: this user approved that THIS APP may use ONE named capability
+// (today only `drive_upload`) against the user's OWN Google Drive connection
+// (lib/googleDrive.js — the platform `drive.file` connection made in Settings,
+// deliberately NOT the Command Deck's wider one).
+//
+// Mirrors WidgetToken's hash-at-rest/revocable shape on purpose, and is a
+// separate table for a security-bearing reason: this grant is resolved by one
+// purpose-built endpoint (routes/appCapability.routes.js) that checks the
+// `app_id` the caller NAMES against the one folded into the grant, so "a token
+// for app A cannot act on app B" is a checked fact rather than a consequence of
+// the functions dispatcher pinning a body field. See lib/appCapabilityGrants.js.
+//
+// THE TOKEN IS FOR AN APP'S BACKEND, NEVER FOR A PAGE. A token that can write to
+// a user's Drive, held in a public web page, is readable and usable by anyone who
+// opens it. The capability endpoint is therefore server-to-server; a static app
+// takes the own-OAuth-client route instead and the build writes those steps into
+// its README. That rule is stated in the created-token response and in the UI.
+//
+// SHIPS WITH server/prisma/selfdev-app-capability-grants.sql (hazard H8), which is
+// additive and is NOT applied by the change that adds this model. Every read in
+// lib/appCapabilityGrants.js degrades to a clear 503 when the table is absent, so
+// an unmigrated database cannot break any other page — the smallest possible
+// blast radius for the H11 shape, because only this endpoint touches the table.
+model AppCapabilityGrant {
+  id            String    @id @default(uuid())
+  created_by_id String
+  owner         User      @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+  project_id    String
+  project       Project   @relation(fields: [project_id], references: [id], onDelete: Cascade)
+
+  // Derived from the project id (lib/appCapability.js's appIdForProject) and
+  // quoted by the app in every request. Not a secret — the token is.
+  app_id        String
+
+  token_prefix  String    // "apc_" + first 8 chars — for the operator's list only
+  token_hash    String    @unique // sha256(full token). The token itself is never stored.
+  label         String?
+  capabilities  String    // comma-separated names from APP_CAPABILITIES
+  revoked       Boolean   @default(false)
+  last_used_at  DateTime?
+
+  created_date  DateTime  @default(now())
+
+  @@index([project_id])
+  @@index([created_by_id])
+  @@map("app_capability_grants")
+}
+
+// An embeddable-widget access token — lets a slim Morpheus surface embedded
+// on the owner's own site act as the owner, but scoped to ONE project and a
+// fixed set of actions. The full token (wgt_<hex>) is shown once at
+// creation; only its SHA-256 is stored. See the "Self-Dev as a Plugin"
+// scope doc, §"The chat surface".
+model WidgetToken {
+  id            String    @id @default(uuid())
+  created_by_id String
+  owner         User      @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+  project_id    String
+  project       Project   @relation(fields: [project_id], references: [id], onDelete: Cascade)
+
+  token_prefix  String    // "wgt_" + first 8 chars — for display in the token list
+  token_hash    String    @unique // sha256(full token)
+  label         String?
+  scopes        String    @default("chat,deploy,store") // comma-separated
+  revoked       Boolean   @default(false)
+  last_used_at  DateTime?
+
+  created_date  DateTime  @default(now())
+
+  @@index([project_id])
+  @@map("widget_tokens")
+}
+
+// ── MORPHEUS CONNECT — device login for native/compiled apps ──────
+// A distributable .exe (e.g. Construct's Wikidata Batch Uploader) can't
+// hold a per-user session, and must never embed a static secret tied to
+// whoever built it (anyone running the binary would spend that person's
+// credits). Device flow instead: the app gets a short code, the end user
+// approves it in their own browser while logged into their own account,
+// the app polls until it gets back a DeviceToken scoped to exactly one
+// narrow capability (see lib/deviceToken.js's DEVICE_SCOPE_FUNCTIONS) and
+// billed against that end user's own credits via the normal invokeAI path.
+// Mirrors WidgetToken's hash-at-rest/revocable shape, but personal (no
+// project_id) rather than per-project, and reached via a public
+// start/poll flow rather than an already-authenticated session, since
+// Morpheus itself — not an external device-code holder like GitHub in the
+// existing GitHub Device Flow — is the authority here.
+model DeviceAuthRequest {
+  id              String    @id @default(uuid())
+  device_code     String    @unique // long opaque secret, exe polls with this
+  user_code       String    @unique // short human code, shown on /connect
+  client_label    String    // "Wikidata Batch Uploader" — shown on the approval screen
+  scopes          String    // comma-separated, e.g. "ai_action"
+  status          String    @default("pending") // pending | approved | denied | expired
+  approved_by_id  String?
+  issued_token_id String?   // set once a DeviceToken is minted on approval
+  pending_token   String?   // plaintext secret, held only until the app's next
+                            // poll reads and clears it — the durable DeviceToken
+                            // row only ever stores the hash; this is the one-time
+                            // relay from "approved in a browser" to "the polling
+                            // app finally sees the real token"
+
+  expires_at      DateTime
+  created_date    DateTime  @default(now())
+
+  @@map("device_auth_requests")
+}
+
+model DeviceToken {
+  id            String    @id @default(uuid())
+  created_by_id String    // the end user who approved it — the billing/identity anchor
+  user          User      @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  label         String    // client_label, carried over for a future "connected apps" list
+  token_prefix  String    // "dvc_" + first 8 chars — for display only
+  token_hash    String    @unique // sha256(full token)
+  scopes        String    // comma-separated
+  revoked       Boolean   @default(false)
+  last_used_at  DateTime?
+
+  created_date  DateTime  @default(now())
+
+  @@index([created_by_id])
+  @@map("device_tokens")
+}
+
+// ── COMMAND DECK (Valiant Music) ─────────────────────────────────────────
+// User-facing product name is "Command Deck" — internal codename is "Deck"
+// (every model/table/route below), deliberately distinct from self-dev's
+// own "Command Deck 4.0" roadmap/tier system already used throughout this
+// codebase (ROADMAP.md, the SelfDevDecision model's own comment above, etc.)
+// so a grep for one never surfaces the other.
+// V1 is deliberately self-contained — no Jarvis, no Gmail/Square/Xero, no
+// Listing Studio (an existing Morpheus WordPress plugin widget already
+// handles retail on valiantmusic.com.au directly; Signal Chain's Retail
+// tile is just a link to wp-admin, no entity needed for it).
+
+// Jarvis (later phase, Command Deck) — a plain conversational log, one row
+// per turn. Deliberately its own model rather than reusing ChatMessage,
+// which is hard-coupled to a Project (project_id is a required FK) and
+// carries build-pipeline baggage (mode, fileOperations context) that has
+// nothing to do with a life/business chat persona.
+model DeckJarvisMessage {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  role          String   // user | jarvis
+  content       String   @db.Text
+
+  created_date  DateTime @default(now())
+  @@map("deck_jarvis_messages")
+}
+
+// Jarvis's real long-term memory — not just the rolling recent-turn window
+// chatWithJarvis.js already sends verbatim (see HISTORY_WINDOW in
+// lib/deckMemory.js). As conversation ages out of that window, it gets
+// folded into this single condensed, evolving document (same "fold in what
+// aged out" mechanism lib/contextSummary.js already uses for build chats),
+// so Jarvis keeps real continuity across weeks of use instead of forgetting
+// everything past the last 12 turns. Also mirrored into the user's own
+// Drive backup folder as jarvis-memory.md (see lib/deckMemory.js) so it's
+// durable and genuinely theirs, not just a row in this table.
+model DeckJarvisMemory {
+  id                   String   @id @default(uuid())
+  created_by_id        String   @unique
+  user                 User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  content              String   @db.Text
+  folded_message_count Int      @default(0) // how many DeckJarvisMessage rows are already folded in — mirrors Project.context_summary_message_count's role
+
+  created_date DateTime @default(now())
+  updated_date DateTime @updatedAt
+
+  @@map("deck_jarvis_memory")
+}
+
+model DeckDumpItem {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  text          String   @db.Text
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+  @@map("deck_dump_items")
+}
+
+model DeckPerson {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  name          String
+  phone         String?
+  email         String?
+  color         String
+  is_self       Boolean  @default(false) // the "me" person — a stable identity marker, decoupled from the literal name "You" so it can be renamed freely (see deckConstants.js's isYou())
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@map("deck_people")
+}
+
+model DeckTask {
+  id             String   @id @default(uuid())
+  created_by_id  String
+  user           User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  text           String   @db.Text
+  owner_person_id String?
+  energy         String   @default("any") // low | med | high | any
+  done           Boolean  @default(false)
+
+  created_date   DateTime @default(now())
+  updated_date   DateTime @updatedAt
+
+  @@map("deck_tasks")
+}
+
+model DeckConsignmentItem {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  item          String
+  consignor     String
+  phone         String?
+  price         Float    @default(0)
+  date_in       DateTime @default(now())
+  sold          Boolean  @default(false)
+  photo_url     String?
+
+  // ── CRM fields (2026-09-27) ────────────────────────────────────────────────
+  // Rob's intent: repair and consignment as proper CRM-like records, searchable and editable, that
+  // Jarvis knows and reasons over. A plain nullable id, not a Prisma relation, because that is how
+  // this schema already links a record to a person (`DeckTask.owner_person_id`, resolved in code by
+  // lib/deckSnapshot.js's personName). `consignor`/`phone` stay: a name is often all there is at
+  // intake, and free text must keep working when the person is not yet a DeckPerson.
+  person_id     String?
+  // Stored rather than recomputed from the tiered rule in deckConstants.js (30% to $2000, 20% above):
+  // the rule can change, but what was agreed with a consignor must not change retroactively.
+  fee           Float?
+  sold_price    Float?
+  sold_date     DateTime?
+  paid_out      Boolean  @default(false)
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@map("deck_consignment_items")
+}
+
+model DeckRepairJob {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  customer      String
+  phone         String?
+  item          String
+  notes         String?  @db.Text
+  stage         String   @default("waiting") // waiting | in_progress | done
+  photo_url     String?  // primary/identifying thumbnail
+
+  // ── CRM fields (2026-09-27) ────────────────────────────────────────────────
+  // What makes a job runnable: what was quoted, what was promised, when it finished, whether it was
+  // paid. "What is owing" and "what did I promise for Friday" were unanswerable.
+  // The stage vocabulary is deliberately NOT expanded: a new list of stages is Rob's business's words,
+  // not an assumption to invent, and the existing three are already in the UI's cycle.
+  person_id     String?
+  quote         Float?
+  promised_date DateTime?
+  completed_date DateTime?
+  paid          Boolean  @default(false)
+
+  files         DeckRepairFile[]
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@map("deck_repair_jobs")
+}
+
+model DeckRepairFile {
+  id            String   @id @default(uuid())
+  repair_job_id String
+  repair_job    DeckRepairJob @relation(fields: [repair_job_id], references: [id], onDelete: Cascade)
+
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  name          String
+  file_url      String
+  is_image      Boolean  @default(false)
+
+  created_date  DateTime @default(now())
+
+  @@index([repair_job_id])
+  @@map("deck_repair_files")
+}
+
+model DeckMurbahOpportunity {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  title         String
+  note          String?  @db.Text
+  stage         String   @default("idea") // idea | enquired | booked | active
+
+  // Calendar sync (syncMurbahBooking.js / listMurbahCalendarEvents.js) —
+  // booking_date is deliberately date-only (an all-day Calendar event); Rob
+  // can refine exact times directly in Google Calendar afterward. Both null
+  // until a date is actually set — sync is opt-in per opportunity, not
+  // forced the moment something reaches "booked".
+  booking_date     DateTime?
+  calendar_event_id String?
+
+  // ── The money half (2026-10-02) ─────────────────────────────────────────
+  // The old base44 deck's Murbah panel was a BOOKINGS LEDGER: price, deposit paid, fully paid, and a
+  // start–end range, with every edit re-pushing the whole booking — payment flags included — into the
+  // Calendar event. The calendar half came across when this was ported; the money half did not, which
+  // is the half that matters.
+  //
+  // booking_date stays the START and the thing Calendar is given, so no existing date is
+  // reinterpreted and nothing needs backfilling; end_date is simply the other end of the range.
+  price        Float?
+  deposit_paid Boolean @default(false)
+  paid         Boolean @default(false)
+  end_date     DateTime?
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@map("deck_murbah_opportunities")
+}
+
+model DeckInboxItem {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  channel       String   // gmail | website | other (social intentionally excluded — see plan)
+  from_name     String
+  from_email    String?
+  message       String   @db.Text
+  stage         String   @default("new") // new | replied | done
+  external_id   String?  // Gmail message id — dedup key for syncDeckGmailInbox.js, null for non-synced items
+
+  // Which forward-to-Jarvis address this arrived via ("jarvis" | "build"), null for
+  // normal inquiry items. Set only by syncDeckGmailInbox.js when a message was sent to
+  // <local>+jarvis@ or <local>+build@ on the connected mailbox — forwards are captured
+  // unfiltered, so this is how the two consumers (Jarvis for the account, the dev agent
+  // for "build") tell the item is theirs.
+  forward_tag   String?
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@map("deck_inbox_items")
+}
+
+// Every Gmail message id syncDeckGmailInbox.js has already classified, kept
+// regardless of the classification's outcome — genuine inquiries become a
+// DeckInboxItem, everything else (newsletters, notifications, marketing) is
+// just recorded here so the sync doesn't re-run the AI classifier on the
+// same message (and the same cost) on every future sync.
+model DeckGmailSeenMessage {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  external_id   String
+
+  created_date  DateTime @default(now())
+
+  @@unique([created_by_id, external_id])
+  @@map("deck_gmail_seen_messages")
+}
+
+model DeckStrategyNote {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  text          String   @db.Text
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@map("deck_strategy_notes")
+}
+
+model DeckKnowledgeNote {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  text          String   @db.Text
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@map("deck_knowledge_notes")
+}
+
+model DeckLifeStream {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  stream_key    String   // health | money | home | people | growth
+  status        String   @default("needs_work") // on | needs_work
+  notes         DeckLifeStreamNote[]
+  files         DeckLifeFile[]
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@unique([created_by_id, stream_key])
+  @@map("deck_life_streams")
+}
+
+// A running, dated note log per life stream — same parent/child shape as
+// DeckRepairJob/DeckRepairFile above.
+model DeckLifeStreamNote {
+  id             String         @id @default(uuid())
+  life_stream_id String
+  life_stream    DeckLifeStream @relation(fields: [life_stream_id], references: [id], onDelete: Cascade)
+  created_by_id  String
+  user           User           @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  text           String   @db.Text
+
+  created_date   DateTime @default(now())
+
+  @@index([life_stream_id])
+  @@map("deck_life_stream_notes")
+}
+
+model DeckEnergyLogEntry {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  date          DateTime // date-only, stored at midnight UTC
+  level         String   // low | med | high
+
+  created_date  DateTime @default(now())
+
+  @@unique([created_by_id, date])
+  @@map("deck_energy_log_entries")
+}
+
+model DeckFocusEntry {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  date          DateTime // date-only, stored at midnight UTC
+  text          String   @db.Text
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@unique([created_by_id, date])
+  @@map("deck_focus_entries")
+}
+
+// 2026-09-17 (Rob: "I should be able to add custom widgets there too, I
+// just don't want to lose the tools I already have") — the real widget
+// registry behind /deck's configurable sections: one row per (account,
+// widget), controlling whether that widget shows on this account's Deck
+// and where. See src/pages/CommandDeck/deckWidgets.js on the frontend for
+// the actual registry of widget keys this refers to. A missing row for a
+// given widget_key is lazy-seeded on first load (same pattern
+// DeckPerson/DeckLifeStream already use for their own defaults) rather than
+// requiring every account to have every row from creation.
+model DeckWidgetInstance {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  widget_key    String
+  enabled       Boolean  @default(true)
+  sort_order    Int      @default(0)
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@unique([created_by_id, widget_key])
+  @@map("deck_widget_instances")
+}
+
+// Progress for a Jarvis-triggered widget build (server/src/functions/
+// buildDeckWidget.js). Rob, 2026-09-17: "it should be a progress bar with
+// details running in the widgets card" — not a chat message, since a build
+// takes ~15 minutes unattended — so this is a plain polled status row, one
+// per build attempt, rather than anything chat-shaped. The Settings widget
+// manager polls the requesting user's own most recent row while its status
+// isn't done/failed.
+model DeckWidgetBuild {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  description   String   @db.Text
+  widget_key    String?
+  action        String   @default("build") // build | delete
+  status        String   @default("planning") // planning | building | pushing | merging | deploying | verifying | done | failed
+  step_index    Int      @default(0)
+  step_count    Int      @default(0)
+  step_title    String?
+  message       String?  @db.Text
+
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@map("deck_widget_builds")
+}
+
+// 2026-09-17 — closes the earlier-noted "Business details settings form"
+// gap (shop_name/tagline/contact_email, previously hardcoded in the Deck
+// header) and carries the new business_context field: what every
+// Valiant-Music-specific prompt (Jarvis's persona, the Gmail inquiry
+// filter, brain-dump classification, doc drafting, suggested replies) used
+// to hardcode inline now reads from here instead, so the same widget code
+// works for any account's business, not just Rob's.
+model DeckBusinessProfile {
+  id               String   @id @default(uuid())
+  created_by_id    String   @unique
+  user             User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  shop_name        String?
+  tagline          String?
+  contact_email    String?
+  business_context String?  @db.Text
+
+  // Consignment fee structure (2026-09-28). Rob: "Consignment is a set fee structure but i can
+  // change it in settings." The shop's cut is `fee_rate_under` percent on the whole price up to
+  // `fee_threshold`, and `fee_rate_over` percent above it — percentages, because that is the unit
+  // a human types (30 = 30%; src/pages/CommandDeck/feeTiers.js divides by 100 exactly once).
+  //
+  // ALL THREE NULLABLE ON PURPOSE: a profile nobody has edited means "use the defaults"
+  // (30 / 2000 / 20), which is not the same as zero. They are only ever read to derive a fee for
+  // a sale being RECORDED — deck_consignment_items.fee is stored at that moment and never
+  // recomputed, so changing these numbers cannot rewrite money already agreed with a consignor
+  // (server/src/lib/deckSnapshot.js sums the stored fee).
+  fee_threshold    Float?
+  fee_rate_under   Float?
+  fee_rate_over    Float?
+
+  // Where the user actually operates (2026-10-04). Rob: "lets assume hes done all these carres
+  // globally so he does need to make sure hes giving the right advice and sugestions relevant to
+  // the users operating territories, ie realestate advice on greenland os differnt to the gold
+  // coast" — so jurisdiction-specific advice has to be LOCATED before it is given.
+  //
+  // A LIST, because he said "multiple places they operate", and FREE TEXT per entry ("Gold Coast,
+  // QLD, Australia") because that is what a human types and what the model reads correctly.
+  //
+  // Deliberately NOT derived from `business_context` prose: inferring a jurisdiction and then
+  // answering with it is a guess presented as a fact, and the whole point of the field is to stop
+  // that. Empty array means "we were never told", which the persona states honestly rather than
+  // filling in — the same two-variant discipline as the Deck snapshot claim.
+  operating_regions String[] @default([])
+
+  created_date     DateTime @default(now())
+  updated_date     DateTime @updatedAt
+
+  @@map("deck_business_profiles")
+}
+
+// ── The play bank (Asteroids reward) ─────────────────────────────────────────────
+// Rob: "when you complete a task i want a pop up window with retro asteroids ... when you
+// complete a task you can play asteroids for 1 min or choose to bank the time to play more
+// later". Ported from the old base44 deck's Play page, which already had the timer and the
+// bank — but stored the bank in a Morpheus settings blob, which the own-data rule rules out
+// for the Deck.
+//
+// The bank is a LEDGER, not a counter. Every completed task writes one credit row and every
+// game writes one score row, and the balance is (sum of credits) - (sum of seconds played).
+// That keeps the full history the own-data rule asks for, makes the balance auditable, and —
+// because of the unique index below — a task can only ever pay once, so un-ticking and
+// re-ticking a task cannot farm play time.
+model DeckPlayCredit {
+  id            String   @id @default(uuid())
+  created_by_id String
+  user          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  // The task that earned it. Nullable so a future source (a streak, a week of focus) can pay in
+  // without a schema change, and because Postgres treats NULLs as distinct it does not collide.
+  task_id       String?
+  seconds       Int      @default(60)
+  reason        String   @default("task") // task | (future sources)
+
+  created_date  DateTime @default(now())
+
+  @@unique([created_by_id, task_id])
+  @@map("deck_play_credits")
+}
+
+// Every game played, in full. The Morpheus-wide board is the best score per account, but nothing
+// is windowed or capped — a later feature can chart progress without a backfill.
+model DeckPlayScore {
+  id              String   @id @default(uuid())
+  created_by_id   String
+  user            User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  // Three arcade characters, chosen by the player. Rob's call (2026-10-02): the board is
+  // Morpheus-wide, so it must not publish one account's real name to another.
+  initials        String
+  score           Int
+  seconds_played  Int
+
+  created_date    DateTime @default(now())
+
+  @@index([score])
+  @@map("deck_play_scores")
+}
+
+// A file attached to a life stream — a photo of a bill, a scan, a document.
+//
+// The old base44 deck had this (`LifeFile`: stream, url, name, type, is_image, note) and the port kept
+// text notes only, so a stream could hold prose and nothing else. It matters twice: it is how a bill or
+// a lab result actually gets kept, and the synthesis can only reason over what is there — the old
+// synthesis passed stream ATTACHMENT urls to the model, and the new snapshot has none.
+model DeckLifeFile {
+  id             String         @id @default(uuid())
+  life_stream_id String
+  life_stream    DeckLifeStream @relation(fields: [life_stream_id], references: [id], onDelete: Cascade)
+  created_by_id  String
+  user           User           @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  file_url       String
+  file_name      String   @default("")
+  file_type      String   @default("")
+  is_image       Boolean  @default(false)
+  note           String?  @db.Text
+
+  created_date   DateTime @default(now())
+
+  @@index([life_stream_id])
+  @@map("deck_life_files")
+}
+
+// ONE UPTIME OBSERVATION of a connected site.
+//
+// The report's item 7: "the one failure an owner notices first". /status exists in
+// every plugin build, needs no signature and costs one HTTP request — and NOTHING
+// stored the answer, so "was my site up last night?" had no answer anywhere. A site
+// that was down for an hour while the owner slept looked identical to one that was
+// never checked.
+//
+// A ROW PER CHECK rather than a running total, because the interesting question is
+// never the percentage alone: it is WHEN it broke, and what the site said. A failed
+// check carries the reason and the code; one that answered carries the plugin version
+// it is running, which is how a site stuck on an old build becomes visible without
+// anyone asking it.
+//
+// Bounded by PRUNING on write (lib/siteUptimeStore.js) rather than by a counter: an
+// unbounded table grows at the polling rate forever, and that is a cost nobody can
+// see coming.
+model SiteUptimeCheck {
+  id             String   @id @default(uuid())
+  project_id     String
+  project        Project  @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  created_by_id  String
+  owner          User     @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  checked_at     DateTime @default(now())
+  ok             Boolean
+  // 0 means "never got a response" — the case worth telling apart from a 500.
+  status_code    Int      @default(0)
+  latency_ms     Int      @default(0)
+  plugin_version String?
+  // Why it failed, in the site's or the network's own words.
+  error          String?
+
+  @@index([project_id, checked_at])
+  @@map("site_uptime_checks")
+}

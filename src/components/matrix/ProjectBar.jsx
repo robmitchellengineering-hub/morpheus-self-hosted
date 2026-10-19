@@ -1,0 +1,232 @@
+import { useState } from 'react';
+import { Download, Plus, ArrowLeft, Terminal, Share2, History, FlaskConical, BarChart3, Store, DollarSign, Settings as SettingsIcon, Hammer, RefreshCw, Server, Boxes, Zap, Sparkles, BookOpen, ListChecks, Image as ImageIcon, Palette, Rocket, Inbox, Globe, FileJson } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { toast } from '@/components/ui/use-toast';
+import { generateManual } from '@/lib/generateManual';
+import BuildStamp from './BuildStamp';
+import HelpToggle from './HelpToggle';
+import HelpHint from './HelpHint';
+import SheetSelect from './SheetSelect';
+import { targetOptions } from '@/lib/compileTargets';
+
+const btnBase = "flex items-center gap-1 text-xs text-primary/70 hover:text-primary px-3 md:px-2.5 h-[44px] md:h-[34px] whitespace-nowrap shrink-0 border border-primary/30 hover:border-primary/60 hover:bg-primary/5 transition-colors";
+
+export default function ProjectBar({ project, onRename, onExport, onNew, onBack, onUpdateTarget, onShare, onHistory, onFeature, activeFeature, onMedia, assetCount, onBrand, brandSet, onForms, formsOn, onDomain, domainSet, onContent, onWebsite, websiteConnected, onPublish, publishMissing, onTests, onUsage, onMarket, onSeller, onCompile, onSyncDeps, onRebuild, onBackend, onPipeline, onTogglePolish }) {
+  const [renaming, setRenaming] = useState(false);
+  const [nameDraft, setNameDraft] = useState(project?.name || '');
+
+  const saveName = async () => {
+    const next = nameDraft.trim();
+    setRenaming(false);
+    if (!next || next === project?.name || !onRename) return;
+    await onRename(next);
+  };
+  return (
+    <div className="flex flex-col border-b border-primary/20 bg-background shrink-0">
+      {/* Row 1: project identity + primary action */}
+      <div className="flex items-center justify-between gap-3 px-4 py-2.5">
+        <div className="flex items-center gap-3 min-w-0">
+          <button onClick={onBack} className="text-primary/60 hover:text-primary shrink-0 flex items-center justify-center p-2 md:p-0 min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0">
+            <ArrowLeft size={18} />
+          </button>
+          <Terminal size={18} className="text-primary shrink-0" />
+          {/* Tap the name to rename it. A new account's website construct is
+              named from their own name, so this is the first thing they may
+              want to change — and it is a plain field update. */}
+          {renaming ? (
+            <input
+              autoFocus
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              onBlur={() => saveName()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') { e.preventDefault(); saveName(); }
+                if (e.key === 'Escape') { setRenaming(false); setNameDraft(project.name || ''); }
+              }}
+              maxLength={80}
+              className="bg-black/40 border border-primary/40 px-2 py-1 text-primary font-display tracking-wider text-sm focus:outline-none focus:border-primary min-w-0 flex-1"
+            />
+          ) : (
+            <button onClick={() => { setNameDraft(project.name || ''); setRenaming(true); }}
+              title="Tap to rename"
+              className="text-primary font-display tracking-wider truncate neon-glow text-left hover:text-primary/80 min-w-0">
+              {project.name}
+            </button>
+          )}
+          <span className="text-xs text-primary/75 uppercase border border-primary/30 px-2 py-0.5 shrink-0">{project.status}</span>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <SheetSelect
+            value={project.compile_target || 'source'}
+            onChange={(v) => onUpdateTarget && onUpdateTarget(v)}
+            label="COMPILE TARGET"
+            triggerClassName="text-xs px-2 py-1 min-h-[44px] md:min-h-0"
+            options={targetOptions('bar')}
+          />
+          {project.compile_target && project.compile_target !== 'source' && (
+            <HelpHint id="github-compile-prominent" title="Compile Binary" body={`Build a real downloadable ${project.compile_target} binary via GitHub Actions. Morpheus pushes your code to a repo, triggers the build, and publishes the artifact as a GitHub Release.`}>
+              <button onClick={onCompile} className="flex items-center gap-1 text-xs text-black bg-primary hover:bg-[#39ff14] px-3 py-2.5 md:py-1.5 min-h-[44px] md:min-h-0 transition-colors font-bold neon-border animate-pulse">
+                <Hammer size={14} /> COMPILE
+              </button>
+            </HelpHint>
+          )}
+          {/* The help text used to promise "Ready to run locally with zero platform dependency" while the
+              export invented a package.json and a README to make that look true. The export now adds
+              nothing, so the button reports the command that starts the app — or what is missing — from
+              what is actually in the ZIP. */}
+          <HelpHint id="zip-export" title="Download ZIP" body="Download your project as a ZIP — your own source files, exactly as they are, with nothing invented for you. You'll be told the command that starts each part, or what is still missing before it can run.">
+            <button onClick={async () => {
+              const verdict = await onExport?.();
+              if (!verdict?.summary) return;
+              toast({
+                title: verdict.ok ? 'Ready to run' : 'Not runnable yet',
+                description: verdict.summary,
+                variant: verdict.ok ? 'default' : 'destructive',
+              });
+            }} className="flex items-center gap-1 text-xs text-black bg-primary hover:bg-[#39ff14] px-3 py-2.5 md:py-1.5 min-h-[44px] md:min-h-0 transition-colors font-bold neon-border">
+              <Download size={14} /> ZIP
+            </button>
+          </HelpHint>
+        </div>
+      </div>
+      {/* Row 2: action buttons */}
+      <div className="flex items-center gap-1.5 px-4 py-2 border-t border-primary/10 overflow-x-auto scrollbar-matrix overscroll-none">
+        <HelpHint id="new-construct" title="New Construct" body="Create a brand new project. You'll choose a name, description, and compile target — then start building from scratch.">
+          <button onClick={onNew} className={btnBase}>
+            <Plus size={14} /> NEW
+          </button>
+        </HelpHint>
+        <HelpHint id="history" title="History" body="Browse snapshots of your project from earlier build steps. Restore any past version to roll back changes or recover lost work.">
+          <button onClick={onHistory} className={btnBase}>
+            <History size={14} /> HISTORY
+          </button>
+        </HelpHint>
+        {onFeature && (
+          <HelpHint id="feature" title="Feature plan" body="Describe a bigger feature and Morpheus breaks it into small steps, tracked across turns — so a multi-turn build stays on plan instead of drifting.">
+            <button onClick={onFeature} className={btnBase}>
+              <ListChecks size={14} /> FEATURE{activeFeature ? ` ${activeFeature.doneCount}/${activeFeature.totalSteps}` : ''}
+            </button>
+          </HelpHint>
+        )}
+        {onMedia && (
+          <HelpHint id="media" title="Media library" body="Photos, posters, ads and other content for the site. Paste a link you host yourself, or upload from your device straight into your connected GitHub repo — Morpheus never stores the file, just the URL. Listed assets are offered to the builder by name.">
+            <button onClick={onMedia} className={btnBase}>
+              <ImageIcon size={14} /> MEDIA{assetCount ? ` ${assetCount}` : ''}
+            </button>
+          </HelpHint>
+        )}
+        {onBrand && (
+          <HelpHint id="brand" title="Brand kit" body="This site's colours, fonts, corner radius and voice. On a web build the builder is given these as hard constraints — no more guessing at your brand. Saved as a config file inside the project.">
+            <button onClick={onBrand} className={`${btnBase} ${brandSet ? 'text-primary border-primary/60' : ''}`}>
+              <Palette size={14} /> BRAND
+            </button>
+          </HelpHint>
+        )}
+        {onForms && (
+          <HelpHint id="forms" title="Forms" body="Where this site's contact / signup form submissions go. Morpheus never receives them — the builder generates a handler that runs on your host and delivers to your own inbox or Google Sheet. Set the destination and method here.">
+            <button onClick={onForms} className={`${btnBase} ${formsOn ? 'text-primary border-primary/60' : ''}`}>
+              <Inbox size={14} /> FORMS
+            </button>
+          </HelpHint>
+        )}
+        {onDomain && (
+          <HelpHint id="domain" title="Domain" body="Your production domain and host. The builder uses it for canonical, Open Graph and sitemap URLs. Get the exact DNS records to add at your registrar, and run an on-demand live check — DNS, HTTPS, TLS certificate, redirects. Your site stays on your host.">
+            <button onClick={onDomain} className={`${btnBase} ${domainSet ? 'text-primary border-primary/60' : ''}`}>
+              <Globe size={14} /> DOMAIN
+            </button>
+          </HelpHint>
+        )}
+        {onContent && (
+          <HelpHint id="content" title="Content" body="Edit the site's text and lists — headlines, copy, services, team, FAQ — without a rebuild. The builder keeps this content in content/*.json in your repo; edits here commit straight back and your host redeploys.">
+            <button onClick={onContent} className={btnBase}>
+              <FileJson size={14} /> CONTENT
+            </button>
+          </HelpHint>
+        )}
+        {onWebsite && (
+          <HelpHint id="website" title="Your Website" body="Control the Morpheus plugin on your own WordPress site, all from here: install and connect it (Setup), ship code changes to the live site (Deploy), run your WooCommerce shop — add products, set stock, publish or draft (Shop), edit pages and posts (Pages), and own your search presence (SEO: titles, descriptions, keywords, canonical, noindex, an audit of what is missing, plus AI-written metadata and blog drafts). It works with or without another SEO plugin: with none installed Morpheus writes the tags itself, and if Yoast, Rank Math, All in One SEO or SEOPress is active it drives that plugin's own fields instead, so two plugins never emit competing tags. One connection per project, private to your account; Morpheus keeps only the connection, never your content.">
+            <button onClick={onWebsite} className={`${btnBase} ${websiteConnected ? 'text-primary border-primary/60' : ''}`}>
+              <Globe size={14} /> WEBSITE
+            </button>
+          </HelpHint>
+        )}
+        {onPublish && (
+          <HelpHint id="publish" title="Publish checklist" body="What a finished, launchable site includes — title/meta, Open Graph, favicon, sitemap, accessibility, a 404 page, legal pages. The builder is told these on every build; this checks the current files and can fill the gaps in one go.">
+            <button onClick={onPublish} className={`${btnBase} ${publishMissing > 0 ? 'text-yellow-500/90 border-yellow-500/40' : ''}`}>
+              <Rocket size={14} /> PUBLISH{publishMissing > 0 ? ` ${publishMissing}` : ''}
+            </button>
+          </HelpHint>
+        )}
+        <HelpHint id="settings" title="Settings" body="Configure your AI provider (platform or custom endpoint), manage deployment connections (Cloudflare, Supabase, Vercel, etc.), and manage your account.">
+          <Link to="/settings" className={btnBase}>
+            <SettingsIcon size={14} /> SETTINGS
+          </Link>
+        </HelpHint>
+        <HelpHint id="tests" title="Tests" body="Generate and run AI-written test suites for your project. Morpheus analyzes your code and creates test cases to catch bugs before deployment.">
+          <button onClick={onTests} className={btnBase}>
+            <FlaskConical size={14} /> TESTS
+          </button>
+        </HelpHint>
+        <HelpHint id="usage" title="Usage Meter" body="View your AI compute costs, credit consumption, and activity history. See exactly how much each action costs in USD and credits.">
+          <button onClick={onUsage} className={btnBase}>
+            <BarChart3 size={14} /> USAGE
+          </button>
+        </HelpHint>
+        <HelpHint id="market" title="Market" body="Browse the public marketplace of community-built templates and projects. Install free or paid templates to kickstart your own build.">
+          <button onClick={onMarket} className={btnBase}>
+            <Store size={14} /> MARKET
+          </button>
+        </HelpHint>
+        <HelpHint id="earn" title="Earn" body="Publish your project to the marketplace as a paid or free template. Track sales, revenue, and customer downloads.">
+          <button onClick={onSeller} className={btnBase}>
+            <DollarSign size={14} /> EARN
+          </button>
+        </HelpHint>
+        <HelpToggle />
+        <BuildStamp />
+        <HelpHint id="sync-deps" title="Sync Dependencies" body="Scans your project files for imports and updates package.json with the correct dependencies. Keeps your project ready to compile and run.">
+          <button onClick={onSyncDeps} className={btnBase}>
+            <RefreshCw size={14} /> SYNC DEPS
+          </button>
+        </HelpHint>
+        <HelpHint id="polish-ui" title="UI Polish Mode" body="When ON, every chat build runs an extra pass that refines ONLY styling files — spacing, shadows, transitions, responsive breakpoints, empty/loading/error states. It never touches logic. Turn it on when the GUI matters; leave it off for fast simple builds.">
+          <button onClick={onTogglePolish} className={`${btnBase} ${project.polish_ui ? 'bg-primary/15 text-primary border-primary/60' : ''}`}>
+            <Sparkles size={14} /> POLISH {project.polish_ui ? 'ON' : 'OFF'}
+          </button>
+        </HelpHint>
+        <HelpHint id="github-compile" title="GitHub Compile" body="Compiles your project into a real downloadable binary (APK, .exe, etc.) using GitHub Actions. Morpheus pushes your code to a repo, triggers a build, and publishes the artifact as a GitHub Release you can download. Requires your GitHub account connected.">
+          <button onClick={onCompile} className={btnBase}>
+            <Hammer size={14} /> GITHUB COMPILE
+          </button>
+        </HelpHint>
+        {project.compile_target && project.compile_target !== 'source' && (
+          <HelpHint id="pipeline" title="Auto Pipeline" body="Automated loop: compiles your project, and if the build fails, AI diagnoses and fixes the code, then asks Morpheus in chat to fix remaining issues. Repeats until the build succeeds or you stop it. Shows a timer so you can track how long it runs.">
+            <button onClick={onPipeline} className={btnBase}>
+              <Zap size={14} /> PIPELINE
+            </button>
+          </HelpHint>
+        )}
+        <HelpHint id="backend-dev" title="Backend Development" body="Opens the backend development tool. Morpheus auto-analyzes your frontend and plans the backend — database, API routes, auth. Then generates code and deploys to Cloudflare Workers, Supabase, or packages as a self-hosted Docker / standalone ZIP.">
+          <button onClick={onBackend} className={btnBase}>
+            <Server size={14} /> BUILD BACKEND
+          </button>
+        </HelpHint>
+        <HelpHint id="share" title="Share / Export" body="Export your project — push to a new GitHub repo, or email the files as a ZIP. Requires your GitHub account connected for the GitHub option.">
+          <button onClick={onShare} className={btnBase}>
+            <Share2 size={14} /> SHARE
+          </button>
+        </HelpHint>
+        <HelpHint id="architect" title="Architect" body="Open the backend architecture planner. Morpheus designs your database schema, API routes, and infrastructure before writing any code.">
+          <Link to="/architect" className={btnBase}>
+            <Boxes size={14} /> ARCHITECT
+          </Link>
+        </HelpHint>
+        <HelpHint id="manual" title="User Manual" body="Download the full Morpheus user manual as a searchable PDF. It's generated fresh from the live capability list, so it always covers the latest features.">
+          <button onClick={generateManual} className={btnBase}>
+            <BookOpen size={14} /> MANUAL
+          </button>
+        </HelpHint>
+      </div>
+    </div>
+  );
+}

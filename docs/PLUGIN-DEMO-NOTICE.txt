@@ -1,0 +1,101 @@
+MORPHEUS AUDIO PLUGIN — DEMO BUILD
+==================================
+
+What this is
+------------
+A prebuilt Morpheus audio plugin, published so you can hear what the plugin route
+produces before you compile one of your own. It is the whole rig: a Marshall JCM 800
+2203 captured in four states, through a Marshall G12M 4x12 captured with four mics,
+into a drive, a three-band tone stack, a delay and a spring reverb — nine blocks, in
+the order a pedalboard would have them.
+
+ALL FOUR CAPTURES AND ALL FOUR CABINETS ARE IN THIS BUILD. They are the project
+owner's own captures — his amp, his cabinet — included with the build; no third-party
+licence covers them. To switch between them, use the Capture and Speaker controls in
+the plugin's own panel — or the host's parameter list, where they are the last two
+parameters, of the same names. Capture chooses the amp's state (Crunch, Crunch 2,
+Hi Gain (TS), Hi Gain (RAT)); Speaker chooses the mic on the cabinet (545, U87,
+017 Tube, M160). IT OPENS ON CRUNCH THROUGH THE U87 — a chosen starting point
+rather than a ranking. The opening capture and mic are named as the project's
+defaults rather than being first in their lists, so the lists stay in the order
+the captures were made.
+
+It is NOT the product. What Morpheus makes for you is a plugin built in your own
+repository, around your own model, with your own cabinet — see morpheus.nz.
+
+Where to put it
+---------------
+  macOS    VST3  ->  ~/Library/Audio/Plug-Ins/VST3/
+           AU    ->  ~/Library/Audio/Plug-Ins/Components/
+           CLAP  ->  ~/Library/Audio/Plug-Ins/CLAP/
+           standalone: run it, no installation
+  Windows  VST3  ->  C:\Program Files\Common Files\VST3\
+           CLAP  ->  %COMMONPROGRAMFILES%\CLAP\
+  Linux    VST3  ->  ~/.vst3/          CLAP -> ~/.clap/
+  (AArch64 only. 64-bit ARM Linux — a Raspberry Pi 4 or 5, for instance.)
+
+These builds are unsigned. macOS will quarantine them, and Windows SmartScreen
+will warn once. See the user manual for what each platform's warning means and
+how to get past it.
+
+Two noises that are not faults
+------------------------------
+THE STANDALONE MONITORS YOUR INPUT. It passes whatever your microphone or interface
+hears through the plugin and out of your speakers, amplified by the amp model — so
+with a live microphone and the speakers up it is a feedback loop, and it will howl.
+Use headphones, or mute the input, or use the VST3/AU/CLAP inside a DAW instead:
+there the host decides monitoring and this cannot happen.
+
+AND THIS IS A CAPTURED HIGH-GAIN AMPLIFIER, WHICH IS HONEST ABOUT IT. With no input
+at all it has a noise floor of its own, and the GATE ships at its lowest setting —
+which is OFF, not merely gentle — so nothing is gating that floor between notes.
+That is the capture you asked for, not a defect in the plugin. Raise GATE to about
+-40 dB and it goes quiet when you stop playing, exactly as a real gate would.
+
+Terms
+-----
+Morpheus is published source, not open source. Copyright (c) 2026 Rob Mitchell.
+All rights reserved.
+
+YOU MAY: run this build, and evaluate it, free of charge, for as long as you like.
+YOU MAY NOT: redistribute it, sell it, or ship it inside another product, and you
+may not use it, or anything it contains, to train a model — without our written
+permission. Commercial licensing, including OEM and white-label terms, is
+available: robmitchellengineering@gmail.com
+
+This notice covers the Morpheus software. It does NOT cover the software Morpheus
+writes FOR you: projects and builds produced from your own prompts belong to you.
+It also does not cover the third-party components below, whose own licences are
+more permissive and govern their own code.
+
+The rig in this build
+---------------------
+The four captures are the project owner's own recordings of his JCM 800 2203, and the
+four impulse responses are his own captures of the G12M 4x12. They are the owner's own
+work and are included with this build; no third-party licence applies to them and none
+is claimed for them. They are not third-party material.
+
+The engine that plays a capture is NeuralAmpModelerCore, which is MIT licensed. The
+build fetches and compiles it; it is not stored in this repository.
+
+  https://github.com/sdatkinson/NeuralAmpModelerCore
+
+Third-party components compiled into this build
+-----------------------------------------------
+  CLAP SDK                 MIT          https://github.com/free-audio/clap
+  VST3 SDK (Steinberg)     MIT          https://github.com/steinbergmedia/vst3sdk
+  clap-wrapper             MIT          https://github.com/free-audio/clap-wrapper
+  NeuralAmpModelerCore     MIT          https://github.com/sdatkinson/NeuralAmpModelerCore
+  AudioUnitSDK (Apple)     Apache-2.0   https://github.com/apple/AudioUnitSDK
+  RtAudio, RtMidi          MIT-style    https://github.com/thestk/rtaudio
+  Eigen                    MPL-2.0      https://gitlab.com/libeigen/eigen
+  nlohmann/json            MIT          https://github.com/nlohmann/json
+
+On Linux the build also links ALSA (LGPL-2.1) and X11 (MIT) as system libraries.
+
+Provenance
+----------
+BUILD-PROOF.txt beside this file was written by the build itself, not by hand. It
+records what that build verified — the formats produced, that each is a real
+binary for the machine it claims, and the measurements the plugin was checked
+against. Do not trust this notice over that file; trust that file over this one.

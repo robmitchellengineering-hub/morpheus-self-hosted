@@ -1,0 +1,117 @@
+# The studio lane on WINDOWS — and it is manual only, on purpose.
+#
+# WHY THIS EXISTS
+#
+# The repo ships a Windows installer and a Windows compile target, and until now NOTHING in CI ran on
+# Windows at all. The four defects that made the downloadable Portable Morpheus impossible to install
+# (a missing server manifest, a missing vite entry, an excluded module the frontend imports, and a plugin
+# package whose bytes moved with the builder's timezone) were all found by installing the thing on a real
+# machine — never by a check. A Windows runner is the cheapest way to have that class of check at all.
+#
+# WHY `workflow_dispatch` AND NOT `pull_request`
+#
+# A self-hosted job QUEUES while its machine is off, and a queued check is indistinguishable from a check
+# that will never run. On a pull request that would make every merge in the repo wait on a laptop being
+# awake — which is why the macOS lane is advisory and why this one is manual. Run it from the Actions tab
+# or `gh workflow run studio-windows.yml`. If it ever becomes a gate, it goes behind a repo variable, the
+# way the airmatrix repo does it, so it can be flipped back without editing a workflow.
+name: Studio lane (Windows, self-hosted)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-studio:
+    name: studio windows (self-hosted)
+    # Label-scoped: a runner must carry ALL of these, so this cannot land on a GitHub-hosted runner or on
+    # the macOS runner beside it.
+    runs-on: [self-hosted, studio, windows]
+    timeout-minutes: 25
+    defaults:
+      run:
+        # `powershell`, NOT `pwsh`. The first run of this lane failed with `pwsh: command not found` on a
+        # real Windows node: GitHub-hosted Windows runners ship PowerShell 7 as `pwsh`, and a plain Windows
+        # machine has only Windows PowerShell 5.1. A workflow written against the hosted runner's
+        # conveniences does not run on the hardware we own — which is a fair summary of why self-hosted CI
+        # finds things hosted CI cannot.
+        shell: powershell
+    steps:
+      - uses: actions/checkout@v4
+
+      # The machine's own report, first. "Which machine ran this" is the question a self-hosted lane exists
+      # to answer, and on 2026-10-12 a mesh job claimed a measurement from the wrong machine — so it is
+      # asked, not assumed.
+      - name: Which machine actually took this job
+        run: |
+          "runner name : $env:RUNNER_NAME"
+          "runner os   : $env:RUNNER_OS / $env:RUNNER_ARCH"
+          "hostname    : $(hostname)"
+          "node        : $(node --version)"
+          "npm         : $(npm --version)"
+          "powershell  : $($PSVersionTable.PSVersion)"
+          "workspace   : $env:GITHUB_WORKSPACE"
+
+      # NO INSTALL, deliberately: these guards import nothing but node builtins and the repo's own pure
+      # rule modules. Running them on Windows is the assertion that they still do — and the reason this
+      # lane is worth having is that a guard can pass on a case-insensitive macOS filesystem or a
+      # case-sensitive Linux one and still be wrong on Windows.
+      - name: The portable guards — no dependencies, on Windows
+        run: |
+          node scripts/verify-portable-bundle.mjs
+          node scripts/verify-portable-ai.mjs
+          node scripts/verify-portable-launcher.mjs
+          node scripts/verify-portable-setup.mjs
+          node scripts/verify-portable-remote.mjs
+
+      - name: What this lane has NOT proven
+        run: |
+          "Still on ubuntu-latest: guards (no install), lint + build, render."
+          "This lane proves the mechanism on Windows: a job reaches our hardware and the guards pass there."
+          "It is manual because a self-hosted job queues while the machine is off, and a queued check on a"
+          "pull request would block every merge in the repo."
+
+  # A SECOND JOB, on purpose. The first one asserts that the portable guards are still no-install on
+  # Windows; this one INSTALLS and BUILDS, which is a different claim and would destroy the first if they
+  # shared a job. What it proves is new: this repo ships a Windows installer and a windows-exe compile
+  # target, and until now NOTHING in CI had ever built the frontend on Windows. Every Windows-specific
+  # breakage so far (a case-insensitive path, a `pwsh` that is not there, an execution policy that blocks
+  # the runner's own step scripts) was found by running something, never by reading it.
+  windows-build:
+    name: studio windows build (self-hosted)
+    runs-on: [self-hosted, studio, windows]
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Which machine is building
+        run: |
+          "runner   : $env:RUNNER_NAME on $(hostname)"
+          "node     : $(node --version)   npm: $(npm --version)"
+          "free GB  : " + [math]::Round((Get-PSDrive C).Free / 1GB, 1)
+
+      - name: Install (root)
+        run: npm install --no-audit --no-fund
+
+      - name: Build the frontend on Windows
+        run: npm run build
+
+      # The plugin package is built by JSZip in-process (the `zip` binary it used to call does not exist on
+      # Windows), and its bytes must not depend on the machine or its timezone. Run the determinism guard
+      # HERE as well, so "the same hash on Windows" is measured rather than assumed.
+      - name: The plugin package is deterministic on Windows
+        run: node scripts/verify-plugin-pack.mjs
+
+      - name: The build produced what it claims to
+        run: |
+          $needed = @('dist\index.html', 'dist\deck.html')
+          foreach ($f in $needed) {
+            if (-not (Test-Path $f)) { Write-Error "the build did not produce $f"; exit 1 }
+            "  produced $f (" + [math]::Round((Get-Item $f).Length / 1KB, 1) + " KB)"
+          }
+          "OK: the frontend builds on Windows"

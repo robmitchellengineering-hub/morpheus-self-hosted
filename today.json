@@ -1,0 +1,85 @@
+{
+  "name": "morpheus-self-hosted",
+  "title": "Morpheus — today",
+  "tag": "a digital possibility engine",
+  "mark": "MP",
+  "lede": "Morpheus builds software by describing it, and it <em>builds itself</em> — the planner→coder→reviewer loop is live and shipping <b>13</b> native compile targets today.",
+  "sub": "The results in one read: what actually ships, what is deferred, and what the numbers really are.",
+  "shots": [],
+  "nums": [
+    {
+      "value": "13",
+      "label": "compile targets",
+      "sub": "server/src/lib/compile-targets/ (reality.mjs)"
+    },
+    {
+      "value": "98.7%",
+      "label": "of AI spend is the build pipeline",
+      "sub": "measured — MODEL-DECISIONS.md"
+    },
+    {
+      "value": "24",
+      "label": "deck_* tables in Supabase",
+      "sub": "the Command Deck's own-data architecture"
+    }
+  ],
+  "real": [
+    {
+      "what": "Self-dev build loop",
+      "evidence": "planner → coder → reviewer edits real files, then verify → push → watch → revert; main sits at 9e4b863."
+    },
+    {
+      "what": "Command Deck + Jarvis",
+      "evidence": "/deck and /deck/jarvis, brain-dump auto-filing, long-term memory, cross-deck synthesis, 15 widgets."
+    },
+    {
+      "what": "WordPress plugin + embeddable dock",
+      "evidence": "public/plugin.js → /embed?token=… — dock loader, plugin source, and the dock the plugin prints for an admin."
+    },
+    {
+      "what": "13 native compile targets",
+      "evidence": "android-apk … windows-exe, incl. 3 audio-plugin routes; docs understated them as '6 platforms'."
+    },
+    {
+      "what": "Operator token (self-dev CLI)",
+      "evidence": "node scripts/morpheus.mjs whoami|sync|chat|verify|push|merge|smoke — scoped and capped (server/src/lib/operatorToken.js)."
+    },
+    {
+      "what": "Merge gate, GitHub-enforced",
+      "evidence": "main requires guards (no install), lint + build, and render — branch protection, not only merge.js."
+    },
+    {
+      "what": "SEO static surface",
+      "evidence": "meta/Open Graph/JSON-LD, llms.txt, sitemap.xml, robots.txt — index.html 1.5 KB → 16.8 KB."
+    },
+    {
+      "what": "Billing + metering",
+      "evidence": "real token metering, pre-call reserve/reconcile, token blocks, and the live 200-credit signup grant."
+    },
+    {
+      "what": "Portable self-hosted bundle",
+      "evidence": "dist/portable-morpheus.zip built from the current tree, one-command setup + launchers for macOS/Linux/Windows."
+    }
+  ],
+  "not_built": [
+    {
+      "what": "Priority Compile (paid)",
+      "status": "deferred — needs a Morpheus-owned GitHub org and Actions minutes, a fixed cost paid before revenue."
+    },
+    {
+      "what": "The 7-day Google connection wall",
+      "status": "reconnecting buys 7 days then lapses again; the code is fixed (#391) but the consent screen is 'Testing' — a Google Cloud console action."
+    },
+    {
+      "what": "Deferred Jarvis vision",
+      "status": "Marketplace distribution, dynamic widgets and connections, auto-deploy — direction only, not built."
+    },
+    {
+      "what": "Security items deferred",
+      "status": "rotation of credentials exposed in early logs accepted as 'cross that bridge later'; operator token revocation UI still owed."
+    }
+  ],
+  "callout": "What ships is the self-hosted core — the build loop, the deck, the dock, native compiles. What is deferred sits behind revenue (Priority Compile) or a third-party gate (Google's 7-day wall).",
+  "where": "The 'digital possibility engine' is the destination, not a shipped feature — Jarvis grows toward dynamic widgets and a Marketplace in the order revenue allows.",
+  "foot": "github.com/robmitchellengineering-hub/morpheus-self-hosted · numbers from node scripts/reality.mjs (2026-10-19) and MODEL-DECISIONS.md · live at morpheus.nz"
+}

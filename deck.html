@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/deck-icon.svg" />
+    <link rel="apple-touch-icon" href="/deck-icon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#241A12" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="apple-mobile-web-app-title" content="Command Deck" />
+    <!-- Separate manifest from the main Morpheus app (/manifest.json) so
+         installing from /deck creates its own home-screen app — own name,
+         icon, and start_url — distinct from installing Morpheus itself from
+         the landing page. Same underlying SPA bundle (src/main.jsx); only
+         which static HTML entry served this route differs (see
+         public/_redirects and vite.config.js's build.rollupOptions.input). -->
+    <link rel="manifest" href="/deck-manifest.json" />
+    <title>Command Deck</title>
+    <style>
+      @keyframes deck-spin { to { transform: rotate(360deg); } }
+      #deck-initial-loader {
+        position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+        background: #E7DBBF; z-index: 9999;
+      }
+      #deck-initial-loader .ring {
+        width: 36px; height: 36px; border: 3px solid rgba(36,26,18,0.15);
+        border-top-color: #241A12; border-radius: 50%;
+        animation: deck-spin 0.8s linear infinite;
+      }
+    </style>
+  </head>
+  <body style="background-color: #E7DBBF; margin: 0;">
+    <div id="root">
+      <div id="deck-initial-loader"><div class="ring"></div></div>
+    </div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

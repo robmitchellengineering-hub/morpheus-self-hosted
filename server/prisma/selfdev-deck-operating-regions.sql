@@ -1,0 +1,21 @@
+-- Additive-only: where the account operates (2026-10-04).
+--
+-- Rob: "lets assume hes done all these carres globally so he does need to make sure hes giving the
+-- right advice and sugestions relevant to the users operating territories, ie realestate advice on
+-- greenland os differnt to the gold coast, so before giving that advice or sugestion it needs to be
+-- grounded in the users region or multiple places they operate"
+--
+-- A text[] rather than a joined string: it is genuinely a list ("multiple places they operate"), and
+-- an array keeps each place a separate value instead of forcing a delimiter the reader has to guess.
+-- An empty array means "we were never told", which is NOT the same as "nowhere" — Jarvis is told
+-- plainly that he was not given one and must not assume a country, exactly as he is told when the
+-- Deck snapshot is withheld.
+--
+-- `if not exists` + a non-null default, so this is safe to auto-apply and safe to run twice. No
+-- drops, no renames, no type changes.
+--
+-- H8: this file and server/prisma/manual-supabase-init.sql are TWO files. A fresh self-host reads
+-- the bootstrap, not this migration, so the same line below is mirrored there. verify-bootstrap-sql.mjs
+-- fails the build if the two ever disagree.
+
+alter table deck_business_profiles add column if not exists operating_regions text[] not null default '{}';

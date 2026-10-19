@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="pickGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#E3B15C"/>
+      <stop offset="100%" stop-color="#B0793C"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Walnut background with rounded corners (maskable safe area) -->
+  <rect width="512" height="512" rx="96" fill="#241A12"/>
+  <rect x="8" y="8" width="496" height="496" rx="88" fill="none" stroke="#B0793C" stroke-width="2" opacity="0.35"/>
+
+  <!-- Guitar pick, centered — rounded-triangle "351" silhouette (wider
+       than tall, shallow top, convex tapering sides), not a map pin. -->
+  <path
+    d="M170 165
+       C 210 145 302 145 342 165
+       C 400 220 370 340 256 400
+       C 142 340 112 220 170 165 Z"
+    fill="url(#pickGrad)"
+  />
+
+  <!-- Control dot: nods to "Command Deck" without crowding the pick -->
+  <circle cx="256" cy="230" r="22" fill="#241A12"/>
+</svg>

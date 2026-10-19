@@ -1,0 +1,121 @@
+// Background worker process. Run as a separate deployment/pod from the API
+// servers so heavy AI/compile-polling work scales independently of request
+// throughput (see SCALING.md). Mostly a no-op today until a queue producer
+// is wired up in autonomousBuildStep/getCompileStatus — see queue.js's
+// header comment — except for the freshness-check repeatable job below,
+// which this process owns whenever REDIS_URL is set (see
+// freshnessSchedule.js for why: exactly-once across however many API
+// replicas are running, instead of every replica running its own timer).
+import 'dotenv/config';
+import { queueEnabled, getQueue, startWorker } from './queue.js';
+import { runFreshnessCheckAndNotify } from './freshness.js';
+import { checkBalanceAndAlert, isDeepSeekPrimary } from './lib/deepseekBalance.js';
+import { runDeckInsights } from './lib/deckInsight.js';
+import { runDueSiteMaintenance } from './siteMaintenanceSchedule.js';
+import { runDueUptimeChecks, DEFAULT_INTERVAL_MS as UPTIME_DEFAULT_INTERVAL_MS } from './siteUptimeSchedule.js';
+
+/** The same env override the in-process schedule reads, so the two cannot disagree. */
+const uptimeIntervalMs = () => Number(process.env.SITE_UPTIME_INTERVAL_MS) || UPTIME_DEFAULT_INTERVAL_MS;
+
+if (!queueEnabled()) {
+  console.log('[morpheus-worker] REDIS_URL not set — nothing to do. This process is only needed once you offload work onto queue.js, or once REDIS_URL is set (single-instance self-hosts get the freshness check via freshnessSchedule.js in the API process instead).');
+  process.exit(0);
+}
+
+console.log('[morpheus-worker] started.');
+
+const FRESHNESS_INTERVAL_MS = Number(process.env.FRESHNESS_CHECK_INTERVAL_MS) || 24 * 60 * 60 * 1000;
+
+if (process.env.FRESHNESS_CHECK_ENABLED !== 'false') {
+  const freshnessQueue = getQueue('freshness-check');
+  await freshnessQueue.add(
+    'check',
+    {},
+    { repeat: { every: FRESHNESS_INTERVAL_MS }, jobId: 'freshness-check-repeatable' },
+  );
+  startWorker('freshness-check', async () => {
+    const notifyEmail = process.env.FRESHNESS_NOTIFY_EMAIL || process.env.SMTP_USER || null;
+    const { summary } = await runFreshnessCheckAndNotify(notifyEmail);
+    console.log(summary.length ? `[freshness] ${summary.length} item(s) worth reviewing: ${summary.join('; ')}` : '[freshness] up to date, nothing to review.');
+  }, 1);
+  console.log(`[morpheus-worker] freshness-check registered — every ${Math.round(FRESHNESS_INTERVAL_MS / 3600000)}h.`);
+}
+
+// Site maintenance, same exactly-once-across-replicas reasoning as
+// freshness-check above. Hourly, not monthly: a monthly job is a wall-clock day
+// of the month, and a fixed interval drifts into the wrong day and skips
+// February. The tick asks the pure isDue() which policies are owed a run, so a
+// run missed while the worker was down happens once on the way back.
+//
+// SCAN ONLY. Applying updates writes to someone's live site and does not exist
+// yet — see siteMaintenanceSchedule.js's header.
+if (process.env.SITE_MAINTENANCE_ENABLED !== 'false') {
+  const maintenanceQueue = getQueue('site-maintenance');
+  await maintenanceQueue.add(
+    'due',
+    {},
+    { repeat: { every: 60 * 60 * 1000 }, jobId: 'site-maintenance-repeatable' },
+  );
+  startWorker('site-maintenance', async () => {
+    const outcomes = await runDueSiteMaintenance();
+    const ran = outcomes.filter((o) => o.status !== 'no-project');
+    console.log(ran.length ? `[site-maintenance] ${ran.length} site(s) checked.` : '[site-maintenance] nothing due this hour.');
+  }, 1);
+  console.log('[morpheus-worker] site-maintenance registered — hourly tick for due policies (scan only).');
+}
+
+// DeepSeek balance safeguard (Token System Build Plan Step 6b) — same
+// exactly-once-across-replicas reasoning as freshness-check above. No-op
+// when DeepSeek isn't this deployment's primary provider.
+if (isDeepSeekPrimary() && process.env.DEEPSEEK_BALANCE_CHECK_ENABLED !== 'false') {
+  const DEEPSEEK_INTERVAL_MS = Number(process.env.DEEPSEEK_BALANCE_CHECK_INTERVAL_MS) || 15 * 60 * 1000;
+  const deepseekQueue = getQueue('deepseek-balance-check');
+  await deepseekQueue.add(
+    'check',
+    {},
+    { repeat: { every: DEEPSEEK_INTERVAL_MS }, jobId: 'deepseek-balance-check-repeatable' },
+  );
+  startWorker('deepseek-balance-check', async () => {
+    const status = await checkBalanceAndAlert();
+    console.log(`[deepseek-balance] level=${status.level} balance=$${status.totalUsd ?? '?'}`);
+  }, 1);
+  console.log(`[morpheus-worker] deepseek-balance-check registered — every ${Math.round(DEEPSEEK_INTERVAL_MS / 60000)}m.`);
+}
+
+// Command Deck's proactive Jarvis insight — same exactly-once-across-replicas
+// reasoning as freshness-check above. Skipped when disabled, so a deployment
+// that turned it off does not register a job that does nothing.
+if (process.env.DECK_INSIGHT_ENABLED !== 'false') {
+  const DECK_INSIGHT_INTERVAL_MS = Number(process.env.DECK_INSIGHT_INTERVAL_MS) || 24 * 60 * 60 * 1000;
+  const deckInsightQueue = getQueue('deck-insight');
+  await deckInsightQueue.add(
+    'run',
+    {},
+    { repeat: { every: DECK_INSIGHT_INTERVAL_MS }, jobId: 'deck-insight-repeatable' },
+  );
+  startWorker('deck-insight', async () => {
+    await runDeckInsights();
+  }, 1);
+  console.log(`[morpheus-worker] deck-insight registered — every ${Math.round(DECK_INSIGHT_INTERVAL_MS / 3600000)}h.`);
+}
+
+// Uptime, the same exactly-once reasoning: with several API replicas an in-process
+// interval would record N observations per tick for one site. Five minutes is the
+// floor, and the tick asks which sites are DUE rather than checking all of them, so a
+// restart or a manual check in the panel never produces a burst.
+if (process.env.SITE_UPTIME_ENABLED !== 'false') {
+  const uptimeQueue = getQueue('site-uptime');
+  await uptimeQueue.add(
+    'due',
+    {},
+    { repeat: { every: uptimeIntervalMs() }, jobId: 'site-uptime-repeatable' },
+  );
+  startWorker('site-uptime', async () => {
+    await runDueUptimeChecks();
+  }, 1);
+  console.log(`[morpheus-worker] site-uptime registered — every ${Math.round(uptimeIntervalMs() / 60000)}m.`);
+}
+
+// Example of how another processor would be registered once a producer
+// exists for the queues queue.js's header comment describes:
+// startWorker('compile-status-poll', async (job) => { ... });

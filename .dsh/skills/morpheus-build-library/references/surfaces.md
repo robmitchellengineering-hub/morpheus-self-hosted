@@ -1,0 +1,101 @@
+# Surfaces — which Morpheus am I looking at?
+
+Read this when a request names a screen ("the SEO tab in the plugin"), when a fix
+seems not to have reached the user, or before adding a panel or a tab.
+
+**The map is generated, not written here.** `node scripts/context.mjs` prints a
+SURFACES section with each surface's entry file, its tabs, which components two
+surfaces share, and the WordPress plugin's asset count. Paths and counts rot;
+that generator does not. Read it before this card.
+
+## The four surfaces
+
+| When the operator says… | They mean | How to tell you are there |
+|---|---|---|
+| "in the app", "the website panel" | the app's WEBSITE panel | it has SETUP and EMBED tabs; they are logged into Morpheus |
+| "in the plugin", "on my site" | **the dock** — the loader Morpheus serves, dropping the panel onto their own pages | they are logged into wp-admin looking at their own site; there is a floating button |
+| "the WordPress plugin" as a thing to install or update | the plugin directory under `wp-plugin/` | it ships no interface at all — if you are hunting for a tab inside it, you are in the wrong place |
+| "the deck", "Jarvis" | the Command Deck | a personal life-assist dashboard, not the site |
+
+## The trap that already cost a session
+
+**The dock loader and the WordPress plugin are unrelated files that both get
+called "the plugin".** One is a script Morpheus serves to the site; the other is
+the plugin that answers signed requests from Morpheus. A session asked to fix
+"the SEO tab in the WordPress plugin" went looking in `wp-plugin/`, found no
+interface — because there is none — and reported the work as misplaced while the
+operator was in the dock the whole time.
+
+If a request names a screen you cannot find, ask which surface before concluding
+the feature does not exist. Two of the four have no tabs at all, and one of those
+two is the one whose name invites the mistake.
+
+## Shared components, and why one fix appears in two places
+
+The dock and the app panel mount the **same** tab components. A fix to a tab is
+therefore a fix in both surfaces, and a bug report from either describes the same
+code. That holds only while nobody forks them: section 11 of
+`scripts/verify-context.mjs` fails if the dock gains a `*Tab` component the app
+panel does not have. A genuinely dock-only tab is fine — that check is the prompt
+to make the decision deliberately instead of drifting into a second panel.
+
+## Chrome the dock does not have
+
+Connecting the site, editing the theme's files and minting an embed token are
+app-panel only: none of them can live on a surface that only exists once the site
+is already connected. Expect them to be missing from the dock, and do not "fix"
+that asymmetry.
+
+## Scope gating
+
+Dock tabs render only for the scopes the widget token carries. A missing tab is
+almost always a missing scope rather than a missing feature — check the token
+before the code, and remember a token's scopes can be edited without reissuing
+the token or touching the snippet already pasted on the site.
+
+## Driving the dock locally, instead of reasoning about it
+
+Source-reading guards cannot tell you the dock works: it is a loader, an iframe,
+a token, scopes and the same tab components as the app panel, and every one of
+those joins can fail while every guard stays green. `scripts/dev-dock-rig.mjs`
+exists so it can be observed. `up` starts the stack plus a mock AI provider and a
+mock WordPress, seeds a fixture project and two widget tokens (a full one and a
+chat-only one) through the real server code, and works in its own database;
+`url` prints the embed URL; `drive` drives the whole thing with the browser —
+including `public/plugin.js` itself on a host page — and fails if a tab is
+missing, a scan never reached the mock site, a message never round-tripped, or
+the console logged an error. See `README.md` → "Driving the embeddable dock
+locally" for what it assumes.
+
+When you change a dock tab, run `drive` and say what you saw. Until this rig
+existed, the dock was asserted by source-reading guards alone — nothing had ever
+put it in a browser.
+
+## The dock's panel is placed by arithmetic, and only a browser can check it
+
+The floating panel's position is decided in `public/plugin.js`'s `reposition()`
+from the toggle's rect and the viewport. That arithmetic has already been wrong
+once, in a way no guard could see and no user would report as anything but "the
+button did nothing": the panel opened **off the bottom of the screen** on any
+viewport shorter than ~742px, because the decision compared the toggle's distance
+from the top against the raw `data-panel-height` instead of the height the
+stylesheet actually gives the panel (`min(panelHeight, 80vh)`) and the room on
+each side.
+
+Two rules for anyone touching it:
+
+- **Measure room per side, from the toggle, and use the size the panel will
+  really get** — the same clamps the stylesheet applies. A raw attribute value is
+  not a size.
+- **Never let the panel be bigger than the room it chose.** Shrinking is always
+  better than spilling: a panel that hangs past the edge is a panel whose controls
+  cannot be reached, and it looks like the toggle is broken.
+
+`drive` now asserts this — panel fully inside the viewport at 720/800/900/1000,
+on a narrow viewport, on a very short one, at saved drag positions near an edge
+and near the bottom, and for `bottom-left` (the `flip-h` side) — and it fails
+loudly with the measured box. That check is the only real one: CI has no browser,
+so there is deliberately no source-reading guard pretending to cover it. Run
+`drive` after touching `reposition()`, the panel's CSS, `data-panel-height` or
+`data-panel-width`.
+

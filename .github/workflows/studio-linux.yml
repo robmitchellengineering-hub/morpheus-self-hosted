@@ -1,0 +1,97 @@
+# The studio lane on LINUX — our own Ubuntu node, and manual only, on purpose.
+#
+# WHY THIS EXISTS
+#
+# Every required check in ci.yml runs on `ubuntu-latest`, billed per minute. The mesh's Linux node is an
+# Ubuntu 24.04 VM (`studio-linux`) on the Legion Go (`win-2`, VMware Workstation, NAT), built unattended
+# from Ubuntu's cloud image with the runner installed as a systemd service. It is the same OS family as the
+# hosted runner, so it is the one self-hosted lane that can run the hosted jobs' real steps unchanged —
+# which is what the second job below does, as the first step towards moving minutes off the hosted pool.
+#
+# WHY `workflow_dispatch` AND NOT `pull_request`
+#
+# The VM lives on a handheld that sleeps, travels and runs on battery. A self-hosted job QUEUES while its
+# machine is off, and a queued check is indistinguishable from a check that will never run (H17) — on a
+# pull request that would make every merge wait on the Legion being awake. Same reasoning as the Windows
+# lane. Run it from the Actions tab or `gh workflow run studio-linux.yml`. It is NOT in branch protection;
+# if it ever becomes a gate it goes behind a repo variable, so it can be flipped back without an edit.
+name: Studio lane (Linux, self-hosted)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-studio:
+    name: studio linux (self-hosted)
+    # Label-scoped: a runner must carry ALL of these, so this cannot land on a GitHub-hosted runner (which
+    # never carries `studio`) or on the macOS / Windows studio runners beside it.
+    runs-on: [self-hosted, studio, linux]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # The machine's own report, first — "which machine ran this" is the question a self-hosted lane exists
+      # to answer (H20), and it is ASSERTED: a hosted runner taking this job would be a passing check that
+      # proved nothing about our hardware.
+      - name: Which machine actually took this job
+        run: |
+          echo "runner name : ${RUNNER_NAME}   (environment: ${RUNNER_ENVIRONMENT:-unset})"
+          echo "runner os   : ${RUNNER_OS} / ${RUNNER_ARCH}"
+          echo "hostname    : $(hostname)"
+          echo "distro      : $(. /etc/os-release && echo "$PRETTY_NAME")   kernel: $(uname -r)"
+          echo "virt        : $(systemd-detect-virt 2>/dev/null || echo unknown)"
+          echo "cpu         : $(nproc) x $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | xargs)"
+          echo "memory      : $(free -h | awk '/^Mem:/{print $2}')"
+          echo "node        : $(node --version)   npm: $(npm --version)"
+          echo "git         : $(git --version)"
+          echo "free disk   : $(df -h "${GITHUB_WORKSPACE}" | tail -1 | awk '{print $4}')"
+          if [ "${RUNNER_ENVIRONMENT:-}" = "github-hosted" ]; then
+            echo "::error::a GitHub-hosted runner took a studio job - the labels no longer scope this lane"
+            exit 1
+          fi
+
+      # NO INSTALL, deliberately: these guards import nothing but node builtins and the repo's own pure rule
+      # modules, so running them with no node_modules is the assertion that they are still no-install.
+      - name: The portable guards — no dependencies, on our own Linux node
+        run: |
+          node scripts/verify-portable-bundle.mjs
+          node scripts/verify-portable-ai.mjs
+          node scripts/verify-portable-launcher.mjs
+          node scripts/verify-portable-setup.mjs
+          node scripts/verify-portable-remote.mjs
+
+  # A SECOND JOB, on purpose: the first asserts the guards are no-install; this one INSTALLS and runs the
+  # hosted `lint + build` job's own steps on our hardware — a different claim, and it would destroy the
+  # first if they shared a workspace. If it stays green here, it is the candidate to move off ubuntu-latest.
+  linux-build:
+    name: studio linux lint + build (self-hosted)
+    runs-on: [self-hosted, studio, linux]
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Which machine is building
+        run: echo "runner ${RUNNER_NAME} on $(hostname), node $(node --version), $(nproc) cpus, $(df -h . | tail -1 | awk '{print $4}') free"
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: The build produced what it claims to
+        run: |
+          for f in dist/index.html dist/deck.html; do
+            [ -f "$f" ] || { echo "::error::the build did not produce $f"; exit 1; }
+            echo "  produced $f ($(du -k "$f" | cut -f1) KB)"
+          done
+          echo "OK: lint, test and build pass on the studio Linux node"

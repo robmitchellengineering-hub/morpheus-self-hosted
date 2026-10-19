@@ -1,0 +1,354 @@
+<?php
+/**
+ * The REST endpoint Morpheus calls: POST /wp-json/morpheus/v1/deploy
+ *
+ * Auth is the HMAC signature, not a WP login — the caller is a server, not
+ * a user. permission_callback returns true and the handler verifies the
+ * signature itself against the raw body (WP would otherwise re-encode it).
+ */
+
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
+class Morpheus_REST {
+
+	const MAX_SKEW = 300; // seconds — reject a request whose `at` is older than this
+
+	public static function register_routes() {
+		register_rest_route( MORPHEUS_REST_NS, '/deploy', array(
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => array( __CLASS__, 'handle_deploy' ),
+		) );
+		register_rest_route( MORPHEUS_REST_NS, '/rollback', array(
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => array( __CLASS__, 'handle_rollback' ),
+		) );
+		// Site health + maintenance scan. POST and SIGNED, unlike /status:
+		// it returns plugin names and versions, user-visible configuration and
+		// what this site can and cannot do, which is not public information.
+		register_rest_route( MORPHEUS_REST_NS, '/health', array(
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => array( __CLASS__, 'handle_health' ),
+		) );
+		// Site maintenance: report what could be updated, or update it. Signed,
+		// like /health and for the same reason — and because this one WRITES.
+		register_rest_route( MORPHEUS_REST_NS, '/maintenance', array(
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => array( __CLASS__, 'handle_maintenance' ),
+		) );
+		// One registered fix, by finding id. Signed like /maintenance: it WRITES.
+		register_rest_route( MORPHEUS_REST_NS, '/fix', array(
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => array( __CLASS__, 'handle_fix' ),
+		) );
+		// Force this plugin's own update check. Signed: it names installed and
+		// available versions and it clears caches. It only CHECKS — applying the
+		// update stays with WordPress's own updater, which stages and swaps the
+		// package, so a failure cannot leave a half-written plugin.
+		register_rest_route( MORPHEUS_REST_NS, '/updates', array(
+			'methods'             => 'POST',
+			'permission_callback' => '__return_true',
+			'callback'            => array( __CLASS__, 'handle_updates' ),
+		) );
+		register_rest_route( MORPHEUS_REST_NS, '/status', array(
+			'methods'             => 'GET',
+			'permission_callback' => '__return_true',
+			'callback'            => array( __CLASS__, 'handle_status' ),
+		) );
+	}
+
+	public static function handle_fix( WP_REST_Request $request ) {
+		$body = self::verified_body( $request );
+		if ( $body instanceof WP_REST_Response ) {
+			return $body;
+		}
+		if ( ! class_exists( 'Morpheus_Fixes' ) ) {
+			return self::err( 'unsupported', 'This build of the Morpheus plugin cannot apply fixes. Update the plugin.', 501 );
+		}
+		$id = isset( $body['id'] ) ? sanitize_key( $body['id'] ) : '';
+		if ( '' === $id ) {
+			return self::err( 'bad_request', 'Body needs the finding "id" to fix.', 400 );
+		}
+		// An optional PROPOSAL: the operator saw exactly what Morpheus would do and
+		// pressed apply. It is NOT trusted — Morpheus_Fixes::apply_ai() checks the
+		// operation against the one this finding is allowed, and every argument against
+		// the site's own state, before anything is touched. This route is the only door
+		// an AI-authored change can come through, and it is a narrow one on purpose.
+		$proposal = null;
+		if ( isset( $body['proposal'] ) && is_array( $body['proposal'] ) ) {
+			$proposal = array(
+				'op'   => isset( $body['proposal']['op'] ) ? sanitize_text_field( (string) $body['proposal']['op'] ) : '',
+				'args' => isset( $body['proposal']['args'] ) && is_array( $body['proposal']['args'] ) ? $body['proposal']['args'] : array(),
+			);
+		}
+		$result = Morpheus_Fixes::apply( $id, $proposal );
+		return new WP_REST_Response( $result, empty( $result['ok'] ) ? 409 : 200 );
+	}
+
+	/**
+	 * Force the plugin's own update check: clear both caches, re-read the
+	 * published manifest, and report what is true right now — including the
+	 * reason when the update server could not be reached.
+	 *
+	 * `check` is the only action, and that is the point: the request that would
+	 * install this plugin's update is served by the code being replaced, so
+	 * Morpheus never applies its own update. WordPress's own updater does that,
+	 * atomically, after the operator taps it.
+	 */
+	public static function handle_updates( WP_REST_Request $request ) {
+		$body = self::verified_body( $request );
+		if ( $body instanceof WP_REST_Response ) {
+			return $body;
+		}
+		if ( ! class_exists( 'Morpheus_Updates' ) ) {
+			return self::err( 'unsupported', 'This build of the Morpheus plugin cannot check for its own updates. Install the current plugin from morpheus.nz once, by hand.', 501 );
+		}
+		$action = isset( $body['action'] ) ? sanitize_key( $body['action'] ) : 'check';
+		if ( 'check' !== $action ) {
+			return self::err( 'bad_request', 'The only update action is "check" — Morpheus never installs its own update.', 400 );
+		}
+		return new WP_REST_Response( Morpheus_Updates::check(), 200 );
+	}
+
+	public static function handle_maintenance( WP_REST_Request $request ) {
+		$body = self::verified_body( $request );
+		if ( $body instanceof WP_REST_Response ) {
+			return $body;
+		}
+		if ( ! class_exists( 'Morpheus_Maintenance' ) ) {
+			return self::err( 'unsupported', 'This build of the Morpheus plugin cannot apply updates. Update the plugin.', 501 );
+		}
+		$action = isset( $body['action'] ) ? sanitize_key( $body['action'] ) : 'plan';
+
+		if ( 'plan' === $action ) {
+			return new WP_REST_Response( Morpheus_Maintenance::plan(), 200 );
+		}
+		if ( 'apply' !== $action ) {
+			return self::err( 'unknown_action', 'action must be plan or apply.', 400 );
+		}
+
+		// The caller decides WHAT, having consulted the owner's policy; this end
+		// decides whether it can be done safely and does it. A refusal (no zip
+		// extension, unwritable backup directory, a path that escapes its root)
+		// comes back as ok=false with a reason, not as a broken site.
+		$targets = isset( $body['targets'] ) && is_array( $body['targets'] ) ? $body['targets'] : array();
+		$result  = Morpheus_Maintenance::apply( $targets, array( 'dry_run' => ! empty( $body['dry_run'] ) ) );
+		return new WP_REST_Response( $result, empty( $result['ok'] ) ? 409 : 200 );
+	}
+
+	/**
+	 * The signed health route, with two actions on it.
+	 *
+	 *   health (default) — WordPress's own Site Health tests plus our light checks.
+	 *   clean            — CLEAN MY SITE: the heavier scan for what is on the
+	 *                      server that nobody asked for. It has its own cache and
+	 *                      its own switch for a reason: it checksums core,
+	 *                      inventories uploads/, mu-plugins, the site root, admins
+	 *                      and cron, and may download a plugin package. Running
+	 *                      that when a panel opens would be a performance bug, so
+	 *                      the APP decides when to spend it — see class-clean.php.
+	 *
+	 * One route rather than two because the auth, the timestamp window and the
+	 * answer shape are identical; a second route would be a second place for the
+	 * signature check to be got wrong. An unknown action is refused by name
+	 * rather than quietly answered with a health scan.
+	 */
+	public static function handle_health( WP_REST_Request $request ) {
+		$body = self::verified_body( $request );
+		if ( $body instanceof WP_REST_Response ) {
+			return $body;
+		}
+		$action = isset( $body['action'] ) ? sanitize_key( $body['action'] ) : 'health';
+		$force  = ! empty( $body['force'] );
+
+		if ( 'clean' === $action ) {
+			if ( ! class_exists( 'Morpheus_Clean' ) ) {
+				return self::err( 'unsupported', 'This build of the Morpheus plugin has no clean scan. Update the plugin.', 501 );
+			}
+			// Read-only by contract: Morpheus_Clean::scan() must never write.
+			return new WP_REST_Response( Morpheus_Clean::scan( $force ), 200 );
+		}
+
+		if ( 'logs' === $action ) {
+			if ( ! class_exists( 'Morpheus_Health' ) ) {
+				return self::err( 'unsupported', 'This build of the Morpheus plugin has no error-log reader. Update the plugin.', 501 );
+			}
+			// Read-only by contract: Morpheus_Health::log_tail() must never write.
+			// A separate action from `health` because a log tail is unbounded in
+			// principle and the scan is cached for five minutes: folding the two
+			// together would either ship log text with every panel open or make the
+			// panel's log view five minutes stale.
+			return new WP_REST_Response( Morpheus_Health::log_tail( $body ), 200 );
+		}
+
+		if ( 'health' !== $action ) {
+			return self::err( 'unknown_action', 'action must be health, clean or logs.', 400 );
+		}
+
+		if ( ! class_exists( 'Morpheus_Health' ) ) {
+			return self::err( 'unsupported', 'This build of the Morpheus plugin has no health scan. Update the plugin.', 501 );
+		}
+		// Read-only by contract: Morpheus_Health::scan() must never write.
+		// `force` is passed through — without it the panel's RESCAN returned the
+		// cached scan for five minutes and read as a fresh one.
+		return new WP_REST_Response( Morpheus_Health::scan( $force ), 200 );
+	}
+
+	public static function handle_status() {
+		$s = Morpheus_Settings::get();
+		return new WP_REST_Response( array(
+			'plugin'     => 'morpheus',
+			'version'    => MORPHEUS_VERSION,
+			'signing'    => (bool) $s['webhook_secret'],
+			'deploy'     => array(
+				'configured' => (bool) ( $s['repo'] && $s['webhook_secret'] ),
+				'armed'      => (bool) $s['armed'],
+				'repo'       => $s['repo'] ?: null,
+				'branch'     => $s['branch'],
+				'last'       => get_option( 'morpheus_deploy_last', null ),
+			),
+			'store'      => array(
+				'available'   => class_exists( 'WooCommerce' ),
+				'woocommerce' => defined( 'WC_VERSION' ) ? WC_VERSION : null,
+			),
+			// The SEO module is core to this plugin — no third-party SEO
+			// plugin required — so `available` really means "this build has
+			// it", which is how the panel knows whether to offer the SEO tab.
+			// `owns_head` tells the operator whether Morpheus or another SEO
+			// plugin is producing the tags (class-seo.php's duplicate-tag rule).
+			'seo'        => array(
+				'available'     => class_exists( 'Morpheus_SEO' ),
+				'owns_head'     => class_exists( 'Morpheus_SEO' ) ? Morpheus_SEO::owns_head() : null,
+				'active_plugin' => class_exists( 'Morpheus_SEO' ) ? Morpheus_SEO::active_plugin() : null,
+			),
+			// How the connect wizard knows this build supports pairing codes,
+			// and whether the site is already connected. No code is exposed —
+			// the code is the credential and only wp-admin shows it.
+			'pairing'    => array(
+				'available' => true,
+				'paired'    => Morpheus_Pairing::is_paired(),
+			),
+			// Whether this build can run CLEAN MY SITE. Public on purpose: it is a
+			// build capability, not the site's state, and the app uses it to say
+			// "update the plugin" rather than to send a request that an older
+			// build would answer with a health scan (it ignores the body).
+			'clean'      => array(
+				'available' => class_exists( 'Morpheus_Clean' ),
+			),
+			// Whether this build can hand its theme over as a working copy —
+			// the wizard offers to create the repo only when it can.
+			'export'     => array(
+				'theme' => true,
+			),
+			// Whether this build has the traffic module (IndexNow submissions)
+			// and whether they are switched on. Same reasoning as `clean`: a
+			// build capability, readable without a signed call, so the TRAFFIC
+			// tab can say "update the plugin" rather than send a request an
+			// older build would refuse. `Morpheus_Traffic::public_status()` was
+			// written for this and had no caller until 2026-10-08 — the module
+			// was invisible to the one surface that asks what a build can do.
+			'traffic'    => class_exists( 'Morpheus_Traffic' )
+				? Morpheus_Traffic::public_status()
+				: array( 'available' => false, 'enabled' => false ),
+			// Whether this build has the redirects module and how many rules it
+			// holds — a build capability plus a count the panel can show without a
+			// signed call. Deliberately NOT the 404 log: that is site activity, not
+			// a property of the build, and /status is unauthenticated.
+			'redirects'  => class_exists( 'Morpheus_Redirects' )
+				? Morpheus_Redirects::public_status()
+				: array( 'available' => false, 'enabled' => false, 'rules' => 0 ),
+			// kept flat for older callers
+			'configured' => (bool) ( $s['repo'] && $s['webhook_secret'] ),
+			'armed'      => (bool) $s['armed'],
+			'writes'     => (bool) $s['armed'],
+		), 200 );
+	}
+
+	/**
+	 * Shared front door for the signed POST endpoints (used by both the
+	 * deploy and store modules): verify the HMAC over the raw body, check
+	 * the replay window, and return the decoded body or a WP_REST_Response
+	 * error.
+	 */
+	public static function verified_body( WP_REST_Request $request ) {
+		$raw    = $request->get_body();
+		$secret = Morpheus_Settings::get( 'webhook_secret' );
+		$sig    = $request->get_header( 'X-Morpheus-Signature' );
+
+		if ( ! $secret ) {
+			return self::err( 'not_configured', 'The signing secret is not set in Settings → Morpheus.', 400 );
+		}
+		if ( ! morpheus_signature_ok( $raw, $secret, (string) $sig ) ) {
+			morpheus_log( 'rejected', array( 'why' => 'bad signature', 'route' => $request->get_route() ) );
+			return self::err( 'bad_signature', 'Signature verification failed.', 401 );
+		}
+		$body = json_decode( $raw, true );
+		if ( ! is_array( $body ) ) {
+			return self::err( 'bad_request', 'Body must be JSON.', 400 );
+		}
+		if ( ! empty( $body['at'] ) ) {
+			$ts = strtotime( $body['at'] );
+			if ( $ts && abs( time() - $ts ) > self::MAX_SKEW ) {
+				return self::err( 'stale', 'Request timestamp is outside the allowed window.', 401 );
+			}
+		}
+		return $body;
+	}
+
+	public static function handle_deploy( WP_REST_Request $request ) {
+		$body = self::verified_body( $request );
+		if ( $body instanceof WP_REST_Response ) {
+			return $body;
+		}
+		if ( empty( $body['commit'] ) ) {
+			return self::err( 'bad_request', 'Body needs a "commit".', 400 );
+		}
+		$commit = preg_replace( '/[^0-9a-f]/i', '', (string) $body['commit'] );
+		if ( strlen( $commit ) < 7 || strlen( $commit ) > 40 ) {
+			return self::err( 'bad_request', 'commit must be a git SHA.', 400 );
+		}
+		$reason = isset( $body['reason'] ) ? sanitize_text_field( $body['reason'] ) : '';
+
+		$settings = Morpheus_Settings::get();
+		$deployer = new Morpheus_Deploy( $settings );
+
+		// Armed → write; otherwise (or with ?dry=1) report only.
+		$force_dry = $request->get_param( 'dry' ) || ! empty( $body['dry_run'] );
+		$result    = ( $settings['armed'] && ! $force_dry )
+			? $deployer->deploy( $commit, $reason )
+			: $deployer->dry_run( $commit, $reason );
+
+		if ( is_wp_error( $result ) ) {
+			$data   = $result->get_error_data();
+			$status = is_array( $data ) && isset( $data['status'] ) ? $data['status'] : 502;
+			return self::err( $result->get_error_code(), $result->get_error_message(), $status, is_array( $data ) ? $data : array() );
+		}
+
+		// A rolled-back deploy is a real, reportable outcome — not an HTTP error.
+		return new WP_REST_Response( $result, empty( $result['ok'] ) && empty( $result['rolled_back'] ) ? 502 : 200 );
+	}
+
+	public static function handle_rollback( WP_REST_Request $request ) {
+		$body = self::verified_body( $request );
+		if ( $body instanceof WP_REST_Response ) {
+			return $body;
+		}
+		$result = ( new Morpheus_Deploy( Morpheus_Settings::get() ) )->rollback_last();
+		if ( is_wp_error( $result ) ) {
+			$data   = $result->get_error_data();
+			$status = is_array( $data ) && isset( $data['status'] ) ? $data['status'] : 502;
+			return self::err( $result->get_error_code(), $result->get_error_message(), $status );
+		}
+		return new WP_REST_Response( $result, 200 );
+	}
+
+	public static function err( $code, $message, $status, array $extra = array() ) {
+		return new WP_REST_Response( array_merge( array( 'ok' => false, 'error' => $code, 'message' => $message ), $extra ), $status );
+	}
+}

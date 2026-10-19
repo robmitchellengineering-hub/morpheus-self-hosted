@@ -1,0 +1,1641 @@
+import { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  Loader2, RefreshCw, ExternalLink, AlertTriangle, Check, ShieldCheck, Server, Package, Clock,
+  Save, CalendarClock, X, Wrench, ListChecks, Zap, ArrowDown, ShieldAlert, Eraser, Info, FileWarning,
+  Sparkles, Play,
+} from 'lucide-react';
+import { base44 } from '@/api/base44Client';
+import { resolveSiteLink } from '@/lib/siteLink';
+import { useTaskRunner, useTaskResult } from '../TaskRunner';
+import ErrorLogPanel from './ErrorLogPanel';
+import UptimePanel from './UptimePanel';
+
+// SITE HEALTH tab — what WordPress's own Site Health screen and Morpheus's own
+// checks say about the operator's live site, in one place.
+//
+// Provenance is never blurred: each finding carries the server's own
+// `sourceLabel`, so WordPress's verdict and Morpheus's checks stay distinct. An
+// absent test is not a pass either, so `async_not_run` is shown quietly.
+//
+// The server derives everything judgeable (`summary`, `attention`, `freshness`,
+// `can_apply`, `update_plan`); this file renders those values and never recounts
+// a severity. The scan itself stays read-only; changing the live site is a
+// separate, twice-confirmed APPLY NOW below, and every outcome it reports is
+// rendered as sent.
+//
+// A finding may also carry ONE `fix`. The control is built only from `fix.kind`
+// and the payload's own words, so a finding with no fix (or `kind: 'none'`) gets
+// no button rather than a dead one; a fix never becomes a "Done" the site did not
+// report, and a fix that reported `verified: false` is never shown as done.
+//
+// CLEAN MY SITE below is a SECOND scan, not a mode of the one above, and it is
+// deliberately not run on its own: it checksums core, walks uploads/ and may
+// download plugin packages, so opening this panel must never spend it. The
+// operator presses SCAN MY SITE with their own finger, reads the findings, and
+// then one press quarantines the safe set — exactly the `auto` findings the
+// site's own registry names, one signed request each, sequenced by construction
+// so two writers never touch the live site at once. Guided findings carry the
+// instruction and no button; a "cleaned" line is only ever shown for a site
+// answer that says a file was actually renamed, and names the backup.
+
+const micro = 'text-[9px] text-primary/35 uppercase tracking-wider';
+// prose helper text, so ink: resolved by usage — every use is a span/div of
+// faint helper copy. The neighbouring `micro` keeps green because it is an
+// uppercase label, and `btn` because it is a button.
+const faint = 'text-ink';
+const btn = 'inline-flex items-center justify-center gap-1.5 px-3 h-[32px] border border-primary/30 text-[10px] uppercase tracking-wider text-primary/80 hover:text-primary hover:border-primary disabled:opacity-40 shrink-0';
+const kvRow = 'grid grid-cols-[1fr_auto] gap-2 border-b border-primary/10 py-1.5 last:border-b-0';
+
+const statusChip = (s) => (s === 'critical' ? 'text-red-400 border-red-500/30'
+  : s === 'recommended' ? 'text-yellow-500/85 border-yellow-500/30' : 'text-primary/45 border-primary/20');
+const statusWord = (s) => (s === 'critical' ? 'needs attention' : s === 'recommended' ? 'recommended' : s);
+
+// core_minor / core_major are WordPress settings, not booleans: the literal
+// "unset" means no override, so it must never be shown to the operator raw.
+const coreSetting = (v) => (v === 'unset' || v === null || v === undefined ? 'WordPress default'
+  : v === true ? 'On' : v === false ? 'Off' : String(v));
+const plain = (v) => (typeof v === 'string' ? v : v?.label || v?.description || v?.id);
+
+// --- scheduled checks --------------------------------------------------------
+// Every derived value in `policy` is the server's and is shown as sent.
+// `allow_core_major_manual` is NOT editable: it records that a human may be
+// OFFERED a major update, which is not permission to apply one.
+const EDITABLE = ['scan_enabled', 'day_of_month', 'hour_utc', 'apply_plugins', 'apply_themes', 'apply_core_minor'];
+const editableOf = (p) => EDITABLE.reduce((o, k) => { o[k] = p[k]; return o; }, {});
+const sameEditable = (a, b) => !!a && !!b && EDITABLE.every((k) => a[k] === b[k]);
+const DAYS_OF_MONTH = Array.from({ length: 28 }, (_, i) => i + 1);
+const HOURS_UTC = Array.from({ length: 24 }, (_, h) => h);
+const pad2 = (n) => String(n).padStart(2, '0');
+/** Bytes as a person reads them. The server sends bytes; the panel shows units. */
+const formatBytes = (n) => {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return '—';
+  if (v < 1024) return `${v} bytes`;
+  if (v < 1024 * 1024) return `${Math.round(v / 1024)} KB`;
+  return `${(v / (1024 * 1024)).toFixed(1)} MB`;
+};
+const ORD = (d) => `${d}${d % 10 === 1 && d !== 11 ? 'st' : d % 10 === 2 && d !== 12 ? 'nd' : d % 10 === 3 && d !== 13 ? 'rd' : 'th'}`;
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const sel = 'mt-1 w-full bg-transparent border border-primary/20 px-1.5 py-1 text-[11px] text-primary/85 outline-none focus:border-primary/50 disabled:opacity-40';
+// The schedule runs in UTC, so its own date is shown in UTC too — rendering it in
+// the visitor's local time would make the two disagree.
+const utcStamp = (ms) => {
+  const d = new Date(Number(ms));
+  return !(Number(ms) > 0) || Number.isNaN(d.getTime()) ? null
+    : `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()} at ${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())} UTC`;
+};
+const KIND_WORD = { plugin: 'plugin', theme: 'theme', core_minor: 'minor WordPress', core_major: 'major WordPress' };
+const wordList = (k) => { const w = k.map((x) => KIND_WORD[x] || x); return w.length > 1 ? `${w.slice(0, -1).join(', ')} and ${w.at(-1)}` : w[0]; };
+
+/** A switch that says, under its own label, what it would do. */
+function Toggle({ label, hint, on, onChange, disabled }) {
+  return (
+    <button type="button" onClick={() => onChange(!on)} disabled={disabled}
+      className={`w-full text-left flex items-start gap-2 border px-2.5 py-2 disabled:opacity-40 ${on ? 'border-primary/40' : 'border-primary/15'}`}>
+      <span className={`mt-[3px] shrink-0 w-[26px] h-[14px] border relative ${on ? 'border-primary/60 bg-primary/20' : 'border-primary/30'}`}>
+        <span className={`absolute top-[2px] w-[8px] h-[8px] ${on ? 'right-[2px] bg-primary/80' : 'left-[2px] bg-primary/35'}`} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[11px] text-ink-max break-words">{label}</span>
+        {hint ? <span className="block text-[9px] text-ink-max leading-relaxed">{hint}</span> : null}
+      </span>
+      <span className={`shrink-0 text-[9px] uppercase tracking-wider ${on ? 'text-primary/80' : 'text-primary/35'}`}>{on ? 'On' : 'Off'}</span>
+    </button>
+  );
+}
+
+function KV({ k, v }) {
+  return (
+    <div className={kvRow}>
+      <div className="text-[10px] text-primary/45">{k}</div>
+      <div className="text-[11px] text-primary/80 text-right break-words">{v}</div>
+    </div>
+  );
+}
+
+function Section({ icon, title, children }) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-1.5">
+        {icon}
+        <span className={micro}>{title}</span>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function UpdateRow({ name, kind, from, to, strong }) {
+  return (
+    <div className={`border px-3 py-2 ${strong ? 'border-primary/30' : 'border-primary/15'}`}>
+      <div className="flex items-start justify-between gap-2">
+        <span className="text-[11px] text-ink-max break-words">{name}</span>
+        {kind ? <span className={`${faint} shrink-0`}>{kind}</span> : null}
+      </div>
+      <div className="text-[10px] text-ink-max">{from || '—'} → {to || '—'}</div>
+    </div>
+  );
+}
+
+/** The server's own answer for one fix, rendered as sent and never embellished. */
+function FixResult({ result }) {
+  if (!result || result.state === 'busy') return null;
+
+  // The request was rejected before the site could answer. Nothing may be shown
+  // as done, and the server's own code says what the operator can do next.
+  if (result.state === 'rejected') {
+    const hint = result.code === 'PLUGIN_TOO_OLD'
+      ? 'This site’s Morpheus plugin is older than this action needs. Update it from the SETUP tab, then re-check.'
+      : result.code === 'NOT_CONNECTED'
+        ? 'No WordPress site is connected to this project, so there is nothing to send this to. Connect one in the SETUP tab.'
+        : result.code === 'UNREACHABLE'
+          ? 'The site did not answer, so Morpheus cannot say whether anything changed. RE-CHECK above once the site is reachable.'
+          : 'The request was rejected, so nothing here can be shown as done.';
+    return (
+      <div className="border border-red-500/30 bg-red-500/5 px-2.5 py-2 space-y-1">
+        <div className="flex items-center gap-1.5">
+          <AlertTriangle size={11} className="shrink-0 text-red-300" />
+          <span className="text-[9px] uppercase tracking-wider text-red-300/90">Not sent</span>
+        </div>
+        <div className="text-[10px] text-red-300/90 leading-relaxed break-words">{result.message}</div>
+        <div className={faint}>{hint}</div>
+      </div>
+    );
+  }
+
+  const f = result.fix || {};
+
+  // A 200 with ok:false is the SITE declining (a guided finding, or nothing
+  // registered for that id) — an answer to render as information, not a crash.
+  if (result.ok !== true) {
+    return (
+      <div className="border border-primary/15 px-2.5 py-2 space-y-1">
+        <div className="text-[10px] text-ink-max leading-relaxed break-words">
+          {f.error || 'The site did not carry this out, and said nothing was changed.'}
+        </div>
+        <div className={faint}>
+          The site&apos;s own answer{f.code ? ` (${f.code})` : ''} — the request reached it, it declined.
+        </div>
+      </div>
+    );
+  }
+
+  // `verified === false` outranks `ok`: the write was attempted and did not hold,
+  // so "Done" would be a lie even though the site called the run a success.
+  const didNotVerify = f.verified === false;
+  if (didNotVerify || f.error) {
+    return (
+      <div className="border border-red-500/30 bg-red-500/5 px-2.5 py-2 space-y-1">
+        <div className="flex items-center gap-1.5">
+          <AlertTriangle size={11} className="shrink-0 text-red-300" />
+          <span className="text-[9px] uppercase tracking-wider text-red-300/90">
+            {didNotVerify ? 'Did not verify' : 'Failed'}
+          </span>
+        </div>
+        <div className="text-[10px] text-red-300/90 leading-relaxed break-words">
+          {didNotVerify
+            ? 'The change did not verify, so it cannot be counted as done.'
+            : (f.error || 'The site reported that this failed.')}
+        </div>
+        {didNotVerify && f.error ? (
+          <div className="text-[10px] text-red-300/80 leading-relaxed break-words">{f.error}</div>
+        ) : null}
+        {f.did ? <div className={faint}>The site said it did: {f.did}</div> : null}
+        {f.restored === true ? (
+          <div className="text-[10px] text-yellow-500/85 leading-relaxed">
+            The previous state was put back, so nothing was left changed this time.
+          </div>
+        ) : null}
+        {result.quarantine?.undo ? (
+          <div className={faint}>{result.quarantine.undo}</div>
+        ) : null}
+        {f.note ? <div className={`${faint} leading-relaxed break-words`}>{f.note}</div> : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="border border-green-500/30 bg-green-500/5 px-2.5 py-2 space-y-1">
+      <div className="flex items-center gap-1.5">
+        <Check size={11} className="shrink-0 text-green-400/90" />
+        <span className="text-[9px] uppercase tracking-wider text-green-400/90">Done</span>
+      </div>
+      <div className="text-[10px] text-ink-max leading-relaxed break-words">
+        {f.did || 'The site carried this out.'}
+      </div>
+      {f.restored === true ? (
+        <div className="text-[10px] text-yellow-500/85 leading-relaxed">The previous state was put back.</div>
+      ) : null}
+      {result.quarantine?.undo ? (
+        <div className={faint}>{result.quarantine.undo}</div>
+      ) : null}
+      {f.note ? <div className={`${faint} leading-relaxed break-words`}>{f.note}</div> : null}
+      <div className={faint}>RESCAN above re-reads the site, so this line is checked rather than assumed.</div>
+    </div>
+  );
+}
+
+/**
+ * The one control a finding may carry, built only from `fix.kind`.
+ *
+ *   auto    — FIX, with the payload's `does` above it and a two-step inline
+ *             confirm (never window.confirm) whenever `warning` is set
+ *   guided  — GUIDE ME: expands the payload's own numbered steps in place and
+ *             ends with RE-CHECK, so Morpheus confirms the result itself
+ *   updates — no fix button: the work belongs to the Updates section, so the
+ *             control goes there and says why
+ *
+ * `none`, an unknown kind or an absent fix render nothing at all.
+ */
+function FixBox({
+  t, fix, busy = false, paused = false, result, onFix, onPropose, onRescan, scanning = false,
+  onJumpToUpdates, siteName, siteUrl,
+}) {
+  // Local to this finding: step two of the confirm, whether the guide is open, and what
+  // Morpheus said it would do (never persisted — a proposal is about the finding in front
+  // of the operator, and a stale one is worse than none).
+  const [confirming, setConfirming] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [asking, setAsking] = useState(false);
+  const [asked, setAsked] = useState(null);
+
+  if (!fix || fix.kind === 'none') return null;
+
+  if (fix.kind === 'updates') {
+    return (
+      <div className="space-y-1.5 border-t border-primary/10 pt-1.5">
+        <div className="text-[10px] text-ink-max leading-relaxed break-words">
+          These are the updates in the Updates section below — apply them there, and each one is snapshotted before it is touched.
+        </div>
+        {fix.warning ? (
+          <div className="border border-yellow-500/30 px-2.5 py-1.5 text-[10px] text-yellow-500/85 leading-relaxed break-words">
+            {fix.warning}
+          </div>
+        ) : null}
+        <button className={btn} onClick={onJumpToUpdates}>
+          <ArrowDown size={12} /> GO TO UPDATES
+        </button>
+      </div>
+    );
+  }
+
+  if (fix.kind === 'guided') {
+    return (
+      <div className="space-y-1.5 border-t border-primary/10 pt-1.5">
+        {/* The payload's own sentence, never a rewritten one. */}
+        {fix.does ? <div className="text-[10px] text-ink-max leading-relaxed break-words">{fix.does}</div> : null}
+        {fix.warning ? (
+          <div className="border border-yellow-500/30 px-2.5 py-1.5 text-[10px] text-yellow-500/85 leading-relaxed break-words">
+            {fix.warning}
+          </div>
+        ) : null}
+        <button className={btn} onClick={() => setOpen((v) => !v)}>
+          <ListChecks size={12} /> {open ? 'HIDE STEPS' : 'GUIDE ME'}
+        </button>
+        {open ? (
+          <div className="space-y-2 border border-primary/15 px-2.5 py-2">
+            <div className={micro}>Do these, then re-check</div>
+            <ol className="space-y-1.5">
+              {fix.steps.map((s, i) => (
+                <li key={`${s.text}-${i}`} className="flex items-start gap-1.5">
+                  <span className="mt-[1px] w-[14px] shrink-0 text-[10px] text-ink-max">{i + 1}.</span>
+                  <span className="min-w-0 flex-1 space-y-0.5">
+                    <span className="block text-[10px] text-ink-max leading-relaxed break-words">{s.text}</span>
+                    {s.link ? (
+                      // Resolved against the CONNECTED SITE, never the origin this
+                      // panel is loaded from — a root-relative step link must not
+                      // land on the app's own 404. See lib/siteLink.js for why the
+                      // plugin sending absolute URLs does not retire this.
+                      <a href={resolveSiteLink(s.link, siteUrl)} target="_blank" rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-[10px] text-primary/80 underline break-all hover:text-primary">
+                        <ExternalLink size={10} className="shrink-0" /> Open this step
+                      </a>
+                    ) : null}
+                  </span>
+                </li>
+              ))}
+            </ol>
+            <button className={btn} onClick={onRescan} disabled={scanning}>
+              {scanning ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} RE-CHECK
+            </button>
+            <div className={faint}>
+              RE-CHECK runs the scan again, so Morpheus confirms this itself instead of taking it on trust.
+            </div>
+          </div>
+        ) : null}
+
+        {/* AI FIX — only for a finding the SITE says Morpheus has a mechanism for.
+            `fix.ai` is the COUNT of operations the site offers for this finding, so a
+            truthy value means one or more exist; a finding marked for AI with no
+            vocabulary behind it arrives as 0 and grows no button. There is deliberately
+            no per-operation label here: the button asks, and the SITE's answer says what
+            it would do. Pressing it CHANGES NOTHING — the answer is shown with the exact
+            change before anything is applied. A refusal is a first-class answer and is
+            rendered as one: most findings on a WordPress site are fixed by a person, and
+            a model that says so is being useful, not failing. */}
+        {fix.ai ? (
+          <div className="space-y-1.5">
+            <button className={btn} disabled={asking || busy}
+              onClick={async () => {
+                setAsking(true); setAsked(null);
+                const answer = await onPropose(t);
+                setAsking(false);
+                setAsked(answer);
+              }}>
+              {asking ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+              {asking ? 'ASKING MORPHEUS…' : 'AI FIX'}
+            </button>
+            {asked && asked.ok === false ? (
+              <div className="border border-red-500/30 px-2.5 py-1.5 text-[10px] text-red-400/90 leading-relaxed break-words">
+                {asked.error}
+              </div>
+            ) : null}
+            {asked && asked.cannot ? (
+              <div className="border border-primary/20 px-2.5 py-1.5 space-y-1">
+                <div className={micro}>Morpheus will not do this one — and says why</div>
+                <div className="text-[10px] text-ink-max leading-relaxed break-words">{asked.cannot}</div>
+              </div>
+            ) : null}
+            {asked && asked.proposal ? (
+              <div className="border border-primary/25 px-2.5 py-2 space-y-1.5">
+                <div className={micro}>Morpheus would do this</div>
+                {/* Rendered from the PROPOSAL, not from the model's sentence about it:
+                    a description that claims more or less than the operation asks for
+                    must not be the thing believed. The model's own words sit BELOW it,
+                    labelled as its reasoning. */}
+                <div className="text-[10px] text-ink-max leading-relaxed break-words">{asked.describe}</div>
+                {asked.proposal.why ? (
+                  <div className="text-[10px] text-ink-max leading-relaxed break-words">
+                    <span className="font-medium">Why: </span>{asked.proposal.why}
+                  </div>
+                ) : null}
+                <div className="flex items-center gap-2">
+                  <button className={btn} disabled={busy} onClick={() => onFix(t, { proposal: asked.proposal })}>
+                    <Play size={12} /> APPLY THIS
+                  </button>
+                  <span className={faint}>Nothing has changed on the site yet.</span>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  // fix.kind === 'auto'
+  return (
+    <div className="space-y-1.5 border-t border-primary/10 pt-1.5">
+      <div className="text-[10px] text-ink-max leading-relaxed break-words">{fix.does}</div>
+      {fix.warning ? (
+        <div className="border border-yellow-500/30 px-2.5 py-1.5 text-[10px] text-yellow-500/85 leading-relaxed break-words">
+          {fix.warning}
+        </div>
+      ) : null}
+
+      {confirming ? (
+        // Step two of two. Nothing has been sent: only the button below calls the
+        // server, and it is only reached at all because `warning` was set.
+        <div className="border border-yellow-500/30 px-2.5 py-2 space-y-2">
+          <div className="text-[11px] text-ink-max leading-relaxed">
+            {fix.warning ? 'This one has a real consequence — do it anyway?' : `Do this on ${siteName} now?`}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button className={`${btn} border-yellow-500/40`}
+              onClick={() => { setConfirming(false); onFix(t); }} disabled={busy}>
+              {busy ? <Loader2 size={12} className="animate-spin" /> : <Wrench size={12} />} {busy ? 'FIXING' : 'YES, FIX IT'}
+            </button>
+            <button className={btn} onClick={() => setConfirming(false)} disabled={busy}>
+              <X size={12} /> CANCEL
+            </button>
+          </div>
+          <div className={faint}>Nothing has been sent yet.</div>
+        </div>
+      ) : (
+        <button className={btn} onClick={() => (fix.warning ? setConfirming(true) : onFix(t))} disabled={busy || paused}>
+          {busy ? <Loader2 size={12} className="animate-spin" /> : <Wrench size={12} />} {fix.label || 'FIX'}
+        </button>
+      )}
+
+      {busy ? (
+        <div className={faint}>Sending to {siteName} — the rest of this page stays as it is.</div>
+      ) : null}
+      {paused && !busy ? (
+        <div className={faint}>FIX ALL is running — this button starts again when it has finished.</div>
+      ) : null}
+      <FixResult result={result} />
+    </div>
+  );
+}
+
+/**
+ * What the LAST attempt at this finding did, as the SITE recorded it.
+ *
+ * This is a record, not a result: it is read back out of the scan payload, so it
+ * is still there after a reload, and it never turns the finding green or counts
+ * it as done. The sentence is the server's (`attempt_line`, derived from the
+ * site's own outcome/code/message) — the panel never composes one, and never
+ * upgrades an unknown outcome to a success.
+ */
+function LastAttempt({ line, outcome }) {
+  if (!line) return null;
+  const done = outcome === 'done';
+  return (
+    <div className={`border px-2.5 py-1.5 ${done ? 'border-green-500/25' : 'border-yellow-500/30'}`}>
+      <div className={`text-[10px] leading-relaxed break-words ${done ? 'text-green-400/90' : 'text-yellow-500/85'}`}>
+        {line}
+      </div>
+      <div className={faint}>
+        {done
+          ? 'Recorded by the site on the last run. The finding below is still what the check says.'
+          : 'Recorded by the site on the last run, so this is why nothing changed — the check itself still decides the finding below.'}
+      </div>
+    </div>
+  );
+}
+
+/** One finding, rendered so the server's own source label is unmissable. */
+function Finding({
+  t, quiet = false, siteName, siteUrl, fixBusy = false, fixPaused = false, fixResult,
+  onFix, onPropose, onRescan, scanning = false, onJumpToUpdates,
+  // CLEAN MY SITE withholds the control on a finding that already reads `good`:
+  // a check that passed must not offer a press that changes the site, or the
+  // buttons on screen stop agreeing with the set the bulk press applies. The
+  // health panel keeps its controls, because `good` there is the same list an
+  // operator reads top-to-bottom rather than a work list.
+  withFix = true,
+}) {
+  const links = t.links || [];
+  return (
+    <div className={`border px-3 py-2.5 space-y-1.5 ${quiet ? 'border-primary/15' : t.status === 'critical' ? 'border-red-500/30' : 'border-yellow-500/30'}`}>
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="text-[12px] text-ink-strong break-words">{t.label}</div>
+          <div className={`${micro} mt-0.5`}>{t.sourceLabel || 'Unknown source'}{t.badge ? ` · ${t.badge}` : ''}</div>
+        </div>
+        <span className={`shrink-0 border px-1.5 py-0.5 text-[9px] uppercase tracking-wider ${statusChip(t.status)}`}>{statusWord(t.status)}</span>
+      </div>
+      {/* The description is shown in full, not truncated: when a finding carries
+          no link, this text is the entire reason it matters. */}
+      <p className={`${quiet ? 'text-[10px] text-ink' : 'text-[11px] text-ink'} leading-relaxed break-words`}>
+        {t.description}
+      </p>
+      {links.map((l, i) => (
+        <a key={`${l.url}-${i}`} href={resolveSiteLink(l.url, siteUrl)} target="_blank" rel="noreferrer"
+          className="flex items-start gap-1.5 text-[11px] text-primary/80 underline break-all hover:text-primary">
+          <ExternalLink size={11} className="mt-[2px] shrink-0" />{l.label || l.url}
+        </a>
+      ))}
+      {/* What the last attempt did, when the site has a record of one. Above the
+          fix control deliberately, and OUTSIDE the `withFix` guard: a finding
+          that reads `good` shows no press, and the reason its press was refused
+          is exactly what the operator came back to read. */}
+      <LastAttempt line={t.attempt_line} outcome={t.last_attempt?.outcome} />
+      {/* The evidence the finding is built from: the files, sizes and dates the
+          scan actually read. Rendered as sent and never summarised into a count —
+          "3 files" without the names is exactly what an operator cannot act on,
+          and a path is the one thing they can paste into a file manager. */}
+      {Array.isArray(t.details) && t.details.length > 0 ? (
+        <details className="border border-primary/15" open={t.status === 'critical'}>
+          <summary className={`${micro} cursor-pointer px-2 py-1.5 select-none`}>
+            {t.details.length} file{t.details.length === 1 ? '' : 's'} to look at
+          </summary>
+          <div className="px-2 pb-2 space-y-1">
+            {t.details.map((d, i) => (
+              <div key={`${d.file}-${i}`} className="text-[10px] text-ink-max leading-relaxed break-all">
+                <span className="text-ink-max">{d.file}</span>
+                {d.size !== undefined ? <span className={faint}> · {formatBytes(d.size)}</span> : null}
+                {d.mtime_iso ? <span className={faint}> · changed {d.mtime_iso}</span> : null}
+                {d.note ? <span className={faint}> · {d.note}</span> : null}
+              </div>
+            ))}
+          </div>
+        </details>
+      ) : null}
+      {/* The action, when the payload carries one — and nothing at all when it does not. */}
+      {t.fix && withFix ? (
+        <FixBox t={t} fix={t.fix} busy={fixBusy} paused={fixPaused} result={fixResult} onPropose={onPropose}
+          onFix={onFix} onRescan={onRescan} scanning={scanning}
+          onJumpToUpdates={onJumpToUpdates} siteName={siteName} siteUrl={siteUrl} />
+      ) : null}
+    </div>
+  );
+}
+
+// --- what a run actually did ------------------------------------------------
+// The server sends the outcome already grouped; this renders those groups as
+// sent. `applied` is the only group allowed to say anything was done, a dry run
+// is labelled as one wherever it could be mistaken for a change, and an empty
+// group is never rendered — a heading with nothing under it reads as a result.
+const TONE_BOX = {
+  green: 'border-green-500/30 bg-green-500/5',
+  yellow: 'border-yellow-500/30',
+  red: 'border-red-500/30 bg-red-500/5',
+  loud: 'border-red-500/50 bg-red-500/10',
+};
+const TONE_TEXT = {
+  green: 'text-green-400/90',
+  yellow: 'text-yellow-500/85',
+  red: 'text-red-300/90',
+  loud: 'text-red-300',
+};
+
+function OutcomeGroup({ tone = 'yellow', title, note, items, icon }) {
+  if (!items || items.length === 0) return null;
+  return (
+    <div className={`border px-3 py-2 space-y-1 ${TONE_BOX[tone] || TONE_BOX.yellow}`}>
+      <div className="flex items-center gap-1.5">
+        {icon}
+        <span className={`text-[9px] uppercase tracking-wider ${TONE_TEXT[tone] || TONE_TEXT.yellow}`}>{title}</span>
+      </div>
+      {note ? <div className="text-[9px] text-ink-max leading-relaxed">{note}</div> : null}
+      {items.map((it, i) => (
+        <div key={`${it}-${i}`} className="flex items-start gap-1.5 text-[11px] text-ink-max">
+          <span className="mt-[5px] shrink-0 w-[3px] h-[3px] bg-primary/40" />
+          <span className="min-w-0 flex-1 break-words">{it}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** The server's own report of a manual run — every group it sent, and nothing inferred. */
+function ApplyReport({ outcome: o }) {
+  const dry = o.dryRun === true;
+  const applied = o.applied || [];
+  const restored = o.restored || [];
+  const restoreFailed = o.restoreFailed || [];
+  const failed = o.failed || [];
+  const skipped = o.skipped || [];
+  const nothingHappened = o.attempted !== false && !o.error
+    && applied.length === 0 && failed.length === 0 && restored.length === 0 && restoreFailed.length === 0;
+  return (
+    <div className="border border-primary/15 px-3 py-2.5 space-y-2">
+      <div className="flex items-start justify-between gap-2">
+        <span className="text-[10px] uppercase tracking-wider text-primary/80">
+          {dry ? 'CHECK FIRST · dry run' : 'APPLY NOW · result'}
+        </span>
+        <span className={`${faint} shrink-0`}>{dry ? 'nothing changed' : 'live site'}</span>
+      </div>
+
+      {dry ? (
+        <div className="border border-yellow-500/30 px-2.5 py-2 text-[10px] text-yellow-500/85 leading-relaxed">
+          Dry run — nothing was changed. Everything below is only what the site said it would do.
+        </div>
+      ) : null}
+
+      {o.error ? (
+        <div className="border border-red-500/30 bg-red-500/5 px-3 py-2 space-y-1">
+          <div className="text-[11px] text-red-300/90 leading-relaxed break-words">
+            {o.error || o.message}
+          </div>
+          {o.code ? <div className={faint}>{o.code}</div> : null}
+        </div>
+      ) : null}
+
+      {o.attempted === false && !o.error ? (
+        <div className="border border-primary/15 px-2.5 py-2 text-[10px] text-ink-max leading-relaxed">
+          {o.message || 'There was nothing for Morpheus to apply.'}
+        </div>
+      ) : null}
+
+      {/* Nothing is put back silently, and a put-back that failed outranks the rest. */}
+      <OutcomeGroup tone="loud" items={restoreFailed} icon={<AlertTriangle size={11} className="shrink-0 text-red-300" />}
+        title={dry ? 'Would need attention now — could not be put back' : 'Needs attention now — could not be put back'}
+        note={dry
+          ? 'On a real run these would be left on the new version, so the site could be left in a state that does not work.'
+          : 'These are not on the version they were on before this run, and Morpheus could not put them back. Check this site now.'} />
+
+      <OutcomeGroup tone="red" items={failed}
+        title={dry ? 'Would fail' : 'Failed'}
+        note={dry
+          ? 'On a real run these would not install, or would not verify after installing.'
+          : 'These did not install, or installed without verifying. They are not updated.'} />
+
+      <OutcomeGroup tone="yellow" items={restored}
+        title={dry ? 'Would be put back — the update did not verify' : 'Put back — the update did not verify'}
+        note={dry
+          ? 'Morpheus would reinstall these from the snapshot taken before they were touched.'
+          : 'Morpheus put these back from the snapshot taken before they were touched.'} />
+
+      <OutcomeGroup tone="green" items={applied}
+        title={dry ? 'Would update and verify' : 'Done — updated and verified'} />
+
+      {/* The owner's own policy limits, not failures — so they are muted, never red. */}
+      {skipped.length > 0 ? (
+        <div className="border-t border-primary/10 pt-1.5 space-y-1">
+          <div className={micro}>Skipped · your policy, not an error</div>
+          {skipped.map((s, i) => (
+            <div key={`${s}-${i}`} className="text-[10px] text-primary/45 break-words">{s}</div>
+          ))}
+        </div>
+      ) : null}
+
+      {nothingHappened ? (
+        <div className="text-[10px] text-ink-max leading-relaxed">
+          {dry ? 'The site reported no update it would apply.' : 'No updates were applied.'}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** The CLEAN MY SITE tally, in words, with a clause only for what happened. */
+const cleanWords = (t) => {
+  const said = [];
+  if (t.done) said.push(`${t.done} quarantined and verified`);
+  if (t.unverified) said.push(`${t.unverified} did not verify`);
+  if (t.failed) said.push(`${t.failed} failed`);
+  if (t.declined) said.push(`${t.declined} declined by the site`);
+  if (t.rejected) said.push(`${t.rejected} could not be sent`);
+  return `CLEAN MY SITE finished — ${said.join(', ') || 'nothing was changed'}. The findings below are from the fresh scan taken after it.`;
+};
+
+/** The FIX ALL tally in words, with a clause only for what actually happened. */
+const fixAllWords = (t) => {
+  const said = [];
+  if (t.done) said.push(`${t.done} done and verified`);
+  if (t.unverified) said.push(`${t.unverified} did not verify`);
+  if (t.failed) said.push(`${t.failed} failed`);
+  if (t.declined) said.push(`${t.declined} declined by the site`);
+  if (t.rejected) said.push(`${t.rejected} could not be sent`);
+  return `FIX ALL finished — ${said.join(', ')}. The findings below are from the fresh scan taken after it.`;
+};
+
+export default function HealthTab({ projectId }) {
+  const [err, setErr] = useState(null);
+  const [showAll, setShowAll] = useState(false);
+  const [policy, setPolicy] = useState(null);       // the saved policy + the server's own wording
+  const [draft, setDraft] = useState(null);         // what the owner has changed but not saved
+  const [saving, setSaving] = useState(false);
+  const [policyErr, setPolicyErr] = useState(null);
+  const [policySaved, setPolicySaved] = useState(null);
+  const [applying, setApplying] = useState(null);     // null | 'check' | 'apply' — which request is in flight
+  const [confirming, setConfirming] = useState(false); // APPLY NOW clicked once; nothing sent yet
+  const [outcome, setOutcome] = useState(null);        // the server's own report of the last run
+  const [runErr, setRunErr] = useState(null);          // { message, dryRun }
+  // Per-finding fixes. `fixingIds` is the finding ids with a request actually in
+  // flight, so one finding's button can spin without freezing the page.
+  const [fixingIds, setFixingIds] = useState([]);
+  const [fixResults, setFixResults] = useState({});     // finding id -> { state, ok, fix } | { state: 'rejected', message, code }
+  const [fixAllConfirming, setFixAllConfirming] = useState(false);
+  // CLEAN MY SITE's step two: the press that names what will be quarantined,
+  // before anything is sent.
+  const [cleanConfirming, setCleanConfirming] = useState(false);
+  // The clean findings that already read `good`, behind a toggle.
+  const [cleanShowClear, setCleanShowClear] = useState(false);
+  // The Updates section, so an `updates` finding can send the operator to it.
+  const updatesRef = useRef(null);
+  const [updatesFlash, setUpdatesFlash] = useState(false);
+  const flashTimer = useRef(null);
+
+  // The scan runs in the task runner like everything else, so leaving the tab does
+  // not cancel it and its findings are still here when the operator comes back.
+  const { tasks, startTask } = useTaskRunner();
+  const scanTask = tasks['health:scan'];
+  // The scan's findings are the run's RESULT, read straight out of the runner: a
+  // mirror in tab state would be a second copy that a tab switch empties.
+  const scan = scanTask?.result ?? null;
+  // The previous scan stays on screen while this one runs. Blanking the tab would
+  // hide exactly the findings the operator is reading.
+  const loading = scanTask?.status === 'running';
+
+  const run = useCallback(async (force) => {
+    setErr(null);
+    await startTask({ key: 'health:scan', label: 'Site health scan', total: 1 }, async ({ cancelled }) => {
+      if (cancelled()) return null;
+      const res = await base44.functions.invoke('siteHealth', { projectId, action: 'scan', force: !!force });
+      if (!res?.data) throw new Error('The scan came back empty — try again.');
+      return res.data;
+    });
+  }, [projectId, startTask]);
+
+  useTaskResult('health:scan', (data) => {
+    // The scan carries the policy, so there is no second round trip to make. It
+    // seeds the draft once: a later scan must not overwrite unsaved edits.
+    if (data.policy) { setPolicy(data.policy); setPolicyErr(null); setDraft((d) => d || editableOf(data.policy)); }
+  });
+
+  // A failed scan: surface the reason, and still read the policy. The schedule is
+  // Morpheus's own data, not WordPress's, so a failed scan must not take the one
+  // writable control down with it. If this read fails too the scan error above is
+  // on screen and RESCAN retries both.
+  useEffect(() => {
+    if (scanTask?.status !== 'error') return;
+    setErr(scanTask.error);
+    base44.functions.invoke('siteHealth', { projectId, action: 'policy' })
+      .then((res) => { if (res?.data) { setPolicy(res.data); setDraft((d) => d || editableOf(res.data)); } })
+      .catch(() => { /* the scan error is the message that matters */ });
+  }, [scanTask?.status, scanTask?.error, projectId]);
+
+  // Scan once when the tab opens — unless a run already exists, in which case its
+  // result is applied above and starting another would only overwrite it.
+  const started = useRef(false);
+  useEffect(() => {
+    if (started.current || scanTask) return;
+    started.current = true;
+    run(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // A manual run, in one of two modes. `confirm: true` is required per
+  // invocation — the policy says what MAY happen on a schedule, this says a
+  // person asked for it now — and the dry run sends the same call with
+  // `dry_run: true`, which asks the site to report without writing.
+  const runApply = async (dryRun) => {
+    if (applying) return;
+    setRunErr(null); setOutcome(null);
+    setApplying(dryRun ? 'check' : 'apply');
+    try {
+      const res = await base44.functions.invoke('siteHealth', {
+        projectId, action: 'apply', confirm: true, dry_run: dryRun,
+      });
+      const out = res?.data?.outcome;
+      if (!out) throw new Error('The server returned no result, so nothing can be shown as done.');
+      setOutcome(out);
+      // A real apply changes the live site, so the update list on screen is now
+      // stale. The report stays up while the fresh scan replaces the list.
+      if (!dryRun) await run(true);
+    } catch (e) {
+      setRunErr({ message: e?.data?.error || e.message, dryRun });
+    } finally { setApplying(null); setConfirming(false); }
+  };
+
+  // One fix, sent to the site and reported exactly as the site answers. A 200
+  // with `ok: false` is the site DECLINING (a guided finding, or nothing
+  // registered for that id) — an answer to render as information, never a crash.
+  // A rejection carries the server's own message; the page stays on screen.
+  // `opts.rescan: false` is for FIX ALL, which scans once when the whole run ends.
+  // ASK — read-only. It returns what Morpheus WOULD do (or why it will not), and the
+  // operator decides. Deliberately not routed through applyFix: a proposal is not a
+  // result, and showing one must not touch the fix-result state a real press owns.
+  const proposeFix = useCallback(async (finding) => {
+    const id = finding?.id;
+    if (!id) return { ok: false, error: 'This finding has no id, so Morpheus cannot be asked about it.' };
+    try {
+      const res = await base44.functions.invoke('siteHealth', { projectId, action: 'propose', finding: id });
+      return { ok: true, ...(res?.data || {}) };
+    } catch (e) {
+      return { ok: false, error: e?.data?.error || e.message, code: e?.data?.code || null };
+    }
+  }, [projectId]);
+
+  const applyFix = useCallback(async (finding, opts = {}) => {
+    const id = finding?.id;
+    if (!id) return { id: '', rejected: true, message: 'This finding has no id, so no fix could be sent.' };
+    setFixResults((r) => ({ ...r, [id]: { state: 'busy' } }));
+    setFixingIds((s) => (s.includes(id) ? s : [...s, id]));
+    try {
+      // `opts.proposal` is an AI-authored change the operator has SEEN and approved. It
+      // travels as data; the plugin re-validates it against the site's own state before
+      // anything is written, so this panel cannot widen what may be applied.
+      const res = await base44.functions.invoke('siteHealth', {
+        projectId, action: 'fix', finding: id,
+        ...(opts.proposal ? { proposal: opts.proposal } : {}),
+      });
+      const payload = res?.data;
+      if (!payload || !payload.fix) {
+        throw new Error('The server returned no result, so nothing can be shown as done.');
+      }
+      // The policy travels with the fix, so the panel above stays right without
+      // a second round trip. Unsaved edits are never overwritten by it.
+      if (payload.policy) { setPolicy(payload.policy); setPolicyErr(null); setDraft((d) => d || editableOf(payload.policy)); }
+      setFixResults((r) => ({ ...r, [id]: { state: 'settled', ok: payload.ok === true, fix: payload.fix, quarantine: payload.quarantine || null } }));
+      // A fix that succeeded re-reads the site, so the finding it just resolved
+      // stops being on screen by itself. Leaving a fixed finding sitting there
+      // until someone finds RESCAN is the dead end this panel exists to avoid.
+      if (payload.ok === true && opts.rescan !== false) await run(true);
+      return { id, rejected: false, ok: payload.ok === true, fix: payload.fix };
+    } catch (e) {
+      const message = e?.data?.error || e.message;
+      setFixResults((r) => ({ ...r, [id]: { state: 'rejected', message, code: e?.data?.code || null } }));
+      return { id, rejected: true, message, code: e?.data?.code || null };
+    } finally {
+      setFixingIds((s) => s.filter((x) => x !== id));
+    }
+  }, [projectId, run]);
+
+  // Take the operator to the Updates section and mark it for a moment, because a
+  // scroll with no sign of where you arrived is a dead end of its own.
+  const jumpToUpdates = useCallback(() => {
+    if (updatesRef.current?.scrollIntoView) updatesRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setUpdatesFlash(true);
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setUpdatesFlash(false), 1800);
+  }, []);
+  useEffect(() => () => { if (flashTimer.current) clearTimeout(flashTimer.current); }, []);
+
+  const { site, summary, freshness, host, auto_updates: auto, can_apply: apply, update_plan: plan } = scan || {};
+  const attention = scan?.attention || [];
+  // The collapsed list is the payload's own findings, filtered to the two non-problem statuses.
+  const rest = (scan?.findings || []).filter((f) => f.status === 'good' || f.status === 'unknown');
+  const notRun = scan?.async_not_run || [];
+
+  // Counts are read straight off `summary` — never recounted from the lists.
+  const countParts = [];
+  if (summary?.critical) countParts.push(`${summary.critical} need attention`);
+  if (summary?.recommended) countParts.push(`${summary.recommended} recommended`);
+  if (summary?.good) countParts.push(`${summary.good} good`);
+  if (summary?.unknown) countParts.push(`${summary.unknown} unknown`);
+
+  const coreRows = plan?.core || [];
+  const otherRows = [
+    ...(plan?.plugins || []).map((p, i) => ({ key: `plugin-${p.file || i}`, kind: 'plugin', name: p.name, from: p.version, to: p.new_version })),
+    ...(plan?.themes || []).map((t, i) => ({ key: `theme-${t.stylesheet || i}`, kind: 'theme', name: t.name, from: t.version, to: t.new_version })),
+  ];
+  const updateTotal = plan ? Math.max(0, plan.total || 0) : null;
+
+  // Dirty covers only the fields this panel can change, never a server-computed value.
+  const dirty = !!policy && !!draft && !sameEditable(draft, editableOf(policy));
+  const nextRun = policy?.scan_enabled ? utcStamp(policy.next_run_at) : null;
+  const canApply = policy?.can_apply_unattended || [];
+  const reportOnly = policy?.report_only || [];
+
+  // What a manual run would actually target: the intersection of what the saved
+  // policy allows (`can_apply_unattended`) and what the scan found. The server
+  // applies exactly that intersection, so counting anything else — the plan
+  // total, for instance — would promise more than the run can do.
+  const applyTargets = plan
+    ? (canApply.includes('plugin') ? (plan.plugins?.length || 0) : 0)
+      + (canApply.includes('theme') ? (plan.themes?.length || 0) : 0)
+      + (canApply.includes('core_minor') ? (plan.core?.length || 0) : 0)
+    : 0;
+  // A button the site or the policy would refuse is a dead end, so the control
+  // is offered only when there is work AND permission AND a writable site.
+  const showApplyControl = updateTotal > 0 && !!policy && applyTargets > 0 && apply?.ok !== false;
+  const siteName = site?.name || site?.url || 'this site';
+  // The connected site's own base URL, for resolving a plugin-supplied step link
+  // that is still root-relative (see lib/siteLink.js). Empty when no site is
+  // connected, which is the one case with nothing to resolve against.
+  const siteUrl = site?.url || '';
+
+  // Only the attention list carries FIX ALL, and only its `auto` findings: a
+  // guided finding needs a person and an `updates` finding belongs to the
+  // Updates section. Nothing else may ever be swept into the run.
+  const autoFindings = attention.filter((t) => t.fix?.kind === 'auto');
+  const anyFixInFlight = fixingIds.length > 0;
+
+  // FIX ALL: every auto finding, one at a time, then ONE fresh scan at the end.
+  // Sequential by construction — a for..of with an await — because two writers on
+  // one live site is how a rollback gets tangled. Guided and updates findings are
+  // never in `autoFindings`, so they can never be included.
+  // FIX ALL runs in the task runner too. It is the longer of the two loops here
+  // (one signed round trip per finding), so it is the one that most needs to
+  // survive being left — and its tally is a RESULT, so it has to come back with it.
+  const fixAllTask = tasks['health:fixall'];
+  const fixAllRunning = fixAllTask?.status === 'running';
+  const fixAllProgress = fixAllRunning && fixAllTask.total
+    ? { index: fixAllTask.done, total: fixAllTask.total, label: fixAllTask.detail }
+    : null;
+  const fixAllReport = fixAllTask?.result?.report ?? null;
+  useTaskResult('health:fixall', () => {}); // the tally is read above, from the runner
+
+  const runFixAll = async () => {
+    if (fixAllRunning || anyFixInFlight || autoFindings.length === 0) return;
+    setFixAllConfirming(false);
+    const findings = autoFindings.map((f) => ({ id: f.id, label: f.label || f.id }));
+    const total = findings.length;
+    await startTask({ key: 'health:fixall', label: 'FIX ALL', total }, async ({ progress, cancelled }) => {
+      const tally = { done: 0, unverified: 0, failed: 0, declined: 0, rejected: 0 };
+      for (let i = 0; i < findings.length; i += 1) {
+        // The strip's Stop is real: it is checked BETWEEN findings, which is the
+        // only place a stop can land without leaving a half-applied fix behind.
+        if (cancelled()) break;
+        const f = findings[i];
+        progress({ done: i, total, detail: f.label });
+        const full = autoFindings.find((x) => x.id === f.id);
+        // eslint-disable-next-line no-await-in-loop
+        const r = await applyFix(full, { rescan: false });
+        if (r?.rejected) tally.rejected += 1;
+        else if (r?.ok !== true) tally.declined += 1;
+        else if (r?.fix?.verified === false) tally.unverified += 1;
+        else if (r?.fix?.error) tally.failed += 1;
+        else tally.done += 1;
+        progress({ done: i + 1, total, detail: f.label });
+      }
+      // One scan at the very end, so what is on screen afterwards is the site as
+      // it now is rather than this run's word for it.
+      await run(true);
+      return { report: fixAllWords(tally) };
+    });
+  };
+
+  // ── CLEAN MY SITE ────────────────────────────────────────────────────────
+  //
+  // A second scan with its own button and its own state. `runClean` is the ONLY
+  // thing that spends it — there is no effect that calls it — so opening the tab
+  // cannot trigger a checksum pass over the operator's site.
+  const cleanTask = tasks['health:clean'];
+  const clean = cleanTask?.result ?? null;
+  const cleanLoading = cleanTask?.status === 'running';
+  const cleanErr = cleanTask?.status === 'error' ? cleanTask.error : null;
+  const cleanDetail = clean?.limits_detail || null;
+  const cleanableIds = (clean?.cleanable || []).map((f) => f.id);
+  // The one press applies exactly what the SERVER derived as the safe set, and
+  // the loop iterates that list rather than re-filtering the findings here — a
+  // second filter is a second rule, and the rule is the server's.
+  // Worst-first, split by whether the finding asks for anything. A `good` finding
+  // is not hidden — an inventory with nothing wrong with it is still worth being
+  // able to read — but it is not presented as work either.
+  const cleanAttention = (clean?.findings || []).filter((f) => f.status !== 'good');
+  const cleanNothingToDo = (clean?.findings || []).filter((f) => f.status === 'good');
+  const cleanTaskRun = tasks['health:cleanapply'];
+  const cleanRunning = cleanTaskRun?.status === 'running';
+  const cleanProgress = cleanRunning && cleanTaskRun.total
+    ? { index: cleanTaskRun.done, total: cleanTaskRun.total, label: cleanTaskRun.detail }
+    : null;
+  const cleanReport = cleanTaskRun?.result?.report ?? null;
+  useTaskResult('health:cleanapply', () => {}); // the tally is read above, from the runner
+
+  const runClean = useCallback(async (force) => {
+    await startTask({ key: 'health:clean', label: 'Clean my site scan', total: 1 }, async ({ cancelled }) => {
+      if (cancelled()) return null;
+      const res = await base44.functions.invoke('siteHealth', { projectId, action: 'clean', force: !!force });
+      if (!res?.data) throw new Error('The clean scan came back empty — try again.');
+      return res.data;
+    });
+  }, [projectId, startTask]);
+
+  // One press, every safe finding, one at a time, then ONE fresh clean scan. The
+  // sequencing is the same rule FIX ALL follows: two writers on one live site is
+  // how a rollback gets tangled, so it is a for..of with an await, never a
+  // Promise.all. Guided findings are not in `cleanableIds`, so they cannot be
+  // swept in by construction.
+  const runCleanSafe = async () => {
+    if (cleanRunning || anyFixInFlight || cleanableIds.length === 0) return;
+    setCleanConfirming(false);
+    const targets = (clean?.cleanable || []).map((f) => ({ id: f.id, label: f.label || f.id }));
+    const total = targets.length;
+    await startTask({ key: 'health:cleanapply', label: 'CLEAN MY SITE', total }, async ({ progress, cancelled }) => {
+      const tally = { done: 0, unverified: 0, failed: 0, declined: 0, rejected: 0 };
+      for (let i = 0; i < targets.length; i += 1) {
+        // The strip's Stop is real: checked BETWEEN findings, the only place a
+        // stop can land without leaving a half-applied fix behind.
+        if (cancelled()) break;
+        const t = targets[i];
+        progress({ done: i, total, detail: t.label });
+        const full = (clean?.cleanable || []).find((x) => x.id === t.id) || t;
+        const r = await applyFix(full, { rescan: false });
+        if (r?.rejected) tally.rejected += 1;
+        else if (r?.ok !== true) tally.declined += 1;
+        else if (r?.fix?.verified === false) tally.unverified += 1;
+        else if (r?.fix?.error) tally.failed += 1;
+        else tally.done += 1;
+        progress({ done: i + 1, total, detail: t.label });
+      }
+      // The scan at the end is the CLEAN one: this section's findings come back
+      // from the site as it now is, rather than this run's word for it. The
+      // health scan above is re-read too, because a quarantine can resolve a
+      // finding there (a stale robots.txt is in both lists) and leaving that
+      // stale would be the same dead end this panel exists to remove.
+      await runClean(true);
+      await run(true);
+      return { report: cleanWords(tally) };
+    });
+  };
+
+  const setField = (key, value) => {
+    setDraft((d) => ({ ...d, [key]: value }));
+    setPolicySaved(null); setPolicyErr(null);
+  };
+
+  const savePolicyDraft = async () => {
+    if (!draft || !dirty || saving) return;
+    setSaving(true); setPolicyErr(null); setPolicySaved(null);
+    try {
+      const res = await base44.functions.invoke('siteHealth', { projectId, action: 'policy', policy: draft });
+      if (!res?.data) throw new Error('the server returned no policy, so what was stored cannot be confirmed.');
+      setPolicy(res.data); setDraft(editableOf(res.data));
+      setPolicySaved('Saved. The description above is what is now stored for this site.');
+    } catch (e) {
+      setPolicyErr(`Not saved — ${e?.data?.error || e.message}`);
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="border-b border-primary/15 px-3 py-2.5 space-y-1.5 shrink-0">
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] text-primary/80 uppercase tracking-wider">Site health</span>
+          <button className={`${btn} ml-auto`} onClick={() => run(true)} disabled={loading}>
+            {loading ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+            {loading && scan ? 'RESCANNING' : 'RESCAN'}
+          </button>
+        </div>
+
+        {site?.url && (
+          <a href={site.url} target="_blank" rel="noreferrer"
+            className="flex items-center gap-1 text-[10px] text-primary/50 hover:text-primary break-all">
+            <ExternalLink size={10} className="shrink-0" /> {site.name || site.url}
+          </a>
+        )}
+
+        {scan && (
+          <>
+            <div className="text-[12px] text-ink-strong break-words">{summary?.headline || 'The scan finished.'}</div>
+            <div className="text-[10px] text-primary/50 break-words">
+              {countParts.join(' · ')}{countParts.length ? ' · ' : ''}WP {scan.wp_version || '—'} · PHP {scan.php_version || '—'}
+            </div>
+            {freshness?.message && (
+              // Stale freshness is a caution, not trivia: it means a "no updates"
+              // answer is old enough that it cannot be trusted.
+              <div className={`flex items-start gap-1 ${freshness.stale ? 'text-yellow-500/85' : 'text-ink'}`}>
+                {freshness.stale
+                  ? <AlertTriangle size={10} className="mt-[2px] shrink-0" />
+                  : <Clock size={10} className="mt-[2px] shrink-0" />}
+                <span className="text-[10px] break-words">{freshness.message}</span>
+              </div>
+            )}
+            {scan.cached && (
+              <div className="text-[10px] text-ink-max">From a recent scan — RESCAN for a fresh one.</div>
+            )}
+          </>
+        )}
+      </div>
+
+      <div className="flex-1 overflow-y-auto scrollbar-matrix p-3 space-y-4">
+        {err && (
+          <div className="border border-red-500/30 bg-red-500/5 px-3 py-2 space-y-1">
+            <div className="text-[11px] text-red-300/90 break-words">{err}</div>
+            <div className={faint}>
+              {scan ? 'Showing the previous scan below.' : 'The site could not be scanned. Tap RESCAN to try again.'}
+            </div>
+          </div>
+        )}
+        {!scan && loading && (
+          <div className="flex items-center gap-2 text-[11px] text-ink-max">
+            <Loader2 size={12} className="animate-spin" /> Scanning the site…
+          </div>
+        )}
+
+        {scan && (
+          <>
+            <Section title={`Needs attention · ${summary?.attention ?? attention.length}`}
+              icon={<AlertTriangle size={11} className={attention.length ? 'text-red-400' : 'text-primary/35'} />}>
+              {summary?.total === 0 ? (
+                // "No tests" and "no problems" are different answers, and only one
+                // of them means the site is fine.
+                <div className="border border-yellow-500/30 px-3 py-2 text-[11px] text-ink-max leading-relaxed">
+                  The scan returned no tests at all. That is not the same as everything being fine — update the
+                  Morpheus plugin from the SETUP tab, then rescan.
+                </div>
+              ) : attention.length === 0 ? (
+                <div className="flex items-start gap-1.5 text-[11px] text-ink-max">
+                  <Check size={12} className="mt-[2px] shrink-0 text-primary/50" />
+                  Nothing in this scan needs attention.
+                </div>
+              ) : (
+                <>
+                  {autoFindings.length > 0 ? (
+                    <div className="space-y-1.5">
+                      {fixAllRunning && fixAllProgress ? (
+                        <div className="flex items-start gap-1.5 text-[10px] text-ink-max">
+                          <Loader2 size={12} className="mt-[1px] shrink-0 animate-spin" />
+                          <span className="break-words">
+                            Fixing {fixAllProgress.index} of {fixAllProgress.total} — {fixAllProgress.label}
+                          </span>
+                        </div>
+                      ) : fixAllConfirming ? (
+                        // Step two of two, naming exactly what will be fixed and
+                        // showing each warned fix's warning BEFORE anything is sent.
+                        <div className="border border-yellow-500/30 px-2.5 py-2 space-y-2">
+                          <div className="text-[11px] text-ink-max leading-relaxed">
+                            Fix {autoFindings.length} {autoFindings.length === 1 ? 'finding' : 'findings'} on {siteName} now?
+                            Morpheus sends them one at a time and re-checks the site when it has finished.
+                          </div>
+                          <div className="space-y-1">
+                            {autoFindings.map((f) => (
+                              <div key={`all-${f.id}`} className="text-[10px] text-ink-max break-words">
+                                <span className="text-ink-max">{f.label || f.id}</span>
+                                {f.fix?.warning ? (
+                                  <span className="block text-[9px] text-yellow-500/85 leading-relaxed">{f.fix.warning}</span>
+                                ) : null}
+                              </div>
+                            ))}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button className={`${btn} border-yellow-500/40`} onClick={runFixAll} disabled={anyFixInFlight}>
+                              <Zap size={12} /> FIX {autoFindings.length}
+                            </button>
+                            <button className={btn} onClick={() => setFixAllConfirming(false)}>
+                              <X size={12} /> CANCEL
+                            </button>
+                          </div>
+                          <div className={faint}>
+                            Nothing has been sent yet. Only the fixes listed here run — a guided finding and an update
+                            finding are never included.
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <button className={btn} onClick={() => setFixAllConfirming(true)} disabled={anyFixInFlight}>
+                            <Zap size={12} /> FIX ALL · {autoFindings.length}
+                          </button>
+                          {anyFixInFlight ? (
+                            <div className={faint}>A fix is still being sent — FIX ALL starts once it has finished.</div>
+                          ) : null}
+                        </>
+                      )}
+                      {fixAllRunning ? (
+                        <div className={faint}>
+                          One fix at a time, so the site is never written to twice at once — the fix buttons below are
+                          paused until this run finishes.
+                        </div>
+                      ) : null}
+                      {fixAllReport && !fixAllRunning ? (
+                        <div className="border border-primary/15 px-2.5 py-2 text-[10px] text-ink-max leading-relaxed break-words">
+                          {fixAllReport}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {attention.map((t, i) => (
+                    <Finding key={`${t.id}-${i}`} t={t} siteName={siteName} siteUrl={siteUrl}
+                      fixBusy={fixingIds.includes(t.id)}
+                      fixPaused={fixAllRunning}
+                      fixResult={fixResults[t.id]}
+                      onFix={applyFix}
+                      onPropose={proposeFix}
+                      onRescan={() => run(true)}
+                      scanning={loading}
+                      onJumpToUpdates={jumpToUpdates} />
+                  ))}
+                </>
+              )}
+            </Section>
+
+            {rest.length > 0 && (
+              <div className="space-y-2">
+                <button className={btn} onClick={() => setShowAll((v) => !v)}>
+                  Everything else · {rest.length} {showAll ? 'HIDE' : 'SHOW'}
+                </button>
+                {showAll && rest.map((t, i) => (
+                  <Finding key={`${t.id}-${i}`} t={t} quiet siteName={siteName} siteUrl={siteUrl}
+                    fixBusy={fixingIds.includes(t.id)}
+                    fixPaused={fixAllRunning}
+                    fixResult={fixResults[t.id]}
+                    onFix={applyFix}
+                    onRescan={() => run(true)}
+                    scanning={loading}
+                    onJumpToUpdates={jumpToUpdates} />
+                ))}
+              </div>
+            )}
+
+            {/* ── ERROR LOG ──────────────────────────────────────────────
+                The read half of a check this plugin has always had. CLEAN MY SITE
+                opens wp-content/debug.log to decide whether the web server is
+                SERVING it; nothing anywhere read the errors, so "what is breaking
+                on my site?" had no answer in Morpheus or in wp-admin. Its own
+                component, and its own button — nothing is fetched on tab open. */}
+            <Section title="ERROR LOG" icon={<FileWarning size={11} className="text-primary/45" />}>
+              <ErrorLogPanel projectId={projectId} />
+            </Section>
+
+            {/* ── CLEAN MY SITE ──────────────────────────────────────────
+                A second, heavier scan with its own button. Nothing here runs on
+                its own: the operator presses SCAN MY SITE, reads the findings,
+                and only then may one press quarantine the safe set. */}
+            <Section title="CLEAN MY SITE" icon={<Eraser size={11} className="text-primary/45" />}>
+              <div className={faint}>
+                What is on the server that nobody asked for — every WordPress core file checked against
+                wordpress.org, your plugins checked against the package the author published, an inventory of
+                mu-plugins, any PHP file in uploads, the accounts that can reach wp-admin, scheduled hooks,
+                what changed this week, and any publicly readable debug.log or wp-config backup.
+                {' '}It is heavier than the scan above, so it runs only when you ask.
+              </div>
+
+              {!clean && !cleanLoading ? (
+                <button className={`${btn} w-full`} onClick={() => runClean(true)}>
+                  <ShieldAlert size={12} /> SCAN MY SITE
+                </button>
+              ) : cleanLoading ? (
+                <div className="flex items-center gap-2 text-[11px] text-ink-max">
+                  <Loader2 size={12} className="animate-spin" /> Scanning the server — this checksums files, so it takes longer…
+                </div>
+              ) : null}
+
+              {cleanErr ? (
+                <div className="border border-red-500/30 bg-red-500/5 px-3 py-2 space-y-1">
+                  <div className="text-[11px] text-red-300/90 break-words">{cleanErr?.data?.error || cleanErr?.message || String(cleanErr)}</div>
+                  <div className={faint}>
+                    {clean ? 'Showing the previous clean scan below.' : 'Nothing was changed by a scan. Press SCAN MY SITE to try again.'}
+                  </div>
+                </div>
+              ) : null}
+
+              {clean ? (
+                <>
+                  <div className="text-[12px] text-ink-strong break-words">{clean.summary?.headline || 'The clean scan finished.'}</div>
+                  <div className="text-[10px] text-ink-max break-words">
+                    {[
+                      clean.summary?.critical ? `${clean.summary.critical} need attention` : null,
+                      clean.summary?.recommended ? `${clean.summary.recommended} to review` : null,
+                      clean.summary?.good ? `${clean.summary.good} clear` : null,
+                      clean.summary?.unknown ? `${clean.summary.unknown} unanswered` : null,
+                      `${clean.summary?.cleanable ?? 0} can be quarantined`,
+                    ].filter(Boolean).join(' · ')}
+                  </div>
+                  {clean.cached ? (
+                    <div className="text-[10px] text-ink-max">
+                      From a recent clean scan — SCAN MY SITE again for a fresh one. Nothing here runs on its own.
+                    </div>
+                  ) : null}
+                  {clean.duration_ms ? (
+                    // Measured, not claimed: the site reports what the pass cost
+                    // and what caps it ran under.
+                    <div className="text-[10px] text-ink-max">
+                      Took {(clean.duration_ms / 1000).toFixed(1)}s on the site
+                      {clean.limits?.hash_files !== undefined
+                        ? `, checksummed ${clean.limits.hash_files} core files`
+                        : ''}.
+                    </div>
+                  ) : null}
+
+                  {/* The single press. It appears ONLY when the server derived a
+                      non-empty safe set, so there is never a button that would
+                      do nothing. */}
+                  {(clean.summary?.cleanable || 0) > 0 ? (
+                    cleanRunning && cleanProgress ? (
+                      <div className="flex items-start gap-1.5 text-[10px] text-ink-max">
+                        <Loader2 size={12} className="mt-[1px] shrink-0 animate-spin" />
+                        <span className="break-words">
+                          Quarantining {cleanProgress.index} of {cleanProgress.total} — {cleanProgress.label}
+                        </span>
+                      </div>
+                    ) : cleanConfirming ? (
+                      <div className="border border-yellow-500/30 px-2.5 py-2 space-y-2">
+                        <div className="text-[11px] text-ink-max leading-relaxed">
+                          Quarantine {cleanableIds.length} {cleanableIds.length === 1 ? 'thing' : 'things'} on {siteName} now?
+                          Nothing is deleted: each file is renamed with a timestamp, and Morpheus re-checks the site when it has finished.
+                        </div>
+                        <div className="space-y-1">
+                          {(clean.cleanable || []).map((f) => (
+                            <div key={`clean-${f.id}`} className="text-[10px] text-ink-max break-words">
+                              <span className="text-ink-max">{f.label || f.id}</span>
+                              {f.fix?.warning ? (
+                                <span className="block text-[9px] text-yellow-500/85 leading-relaxed">{f.fix.warning}</span>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button className={`${btn} border-yellow-500/40`} onClick={runCleanSafe} disabled={anyFixInFlight}>
+                            <Eraser size={12} /> QUARANTINE {cleanableIds.length}
+                          </button>
+                          <button className={btn} onClick={() => setCleanConfirming(false)}>
+                            <X size={12} /> CANCEL
+                          </button>
+                        </div>
+                        <div className={faint}>
+                          Nothing has been sent yet. Only the things listed here are touched — everything the scan
+                          says needs a person (a modified core file, an account, a scheduled hook) has no button.
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5">
+                        <button className={`${btn} w-full`} onClick={() => setCleanConfirming(true)} disabled={anyFixInFlight || cleanRunning}>
+                          <Eraser size={12} /> CLEAN MY SITE · {cleanableIds.length}
+                        </button>
+                        {anyFixInFlight || cleanRunning ? (
+                          <div className={faint}>One thing is still being sent — this starts once it has finished.</div>
+                        ) : null}
+                      </div>
+                    )
+                  ) : (
+                    <div className="border border-primary/15 px-3 py-2 text-[10px] text-ink-max leading-relaxed">
+                      Nothing in this scan is safe for Morpheus to change on its own, and nothing it found reads
+                      clean either. Everything is listed below with what to do about it, and the things that need a
+                      person have no button — a modified core file, an account and a scheduled hook are instructions,
+                      not presses.
+                    </div>
+                  )}
+
+                  {cleanRunning ? (
+                    <div className={faint}>
+                      One thing at a time, so the site is never written to twice at once.
+                    </div>
+                  ) : null}
+                  {cleanReport && !cleanRunning ? (
+                    <div className="border border-primary/15 px-2.5 py-2 text-[10px] text-ink-max leading-relaxed break-words">
+                      {cleanReport}
+                    </div>
+                  ) : null}
+
+                  {/* The findings, worst first. Every one of them renders its own
+                      fix control from `fix.kind`, so a guided finding shows steps
+                      and an auto one shows its own press — never the other way
+                      round. A finding that already reads `good` asks for nothing,
+                      so it sits behind the toggle below rather than under a button
+                      that would change a site in response to a check that passed. */}
+                  <div className="space-y-2">
+                    {cleanAttention.map((t, i) => (
+                      <Finding key={`clean-${t.id}-${i}`} t={t} siteName={siteName} siteUrl={siteUrl}
+                        fixBusy={fixingIds.includes(t.id)}
+                        fixPaused={cleanRunning || fixAllRunning}
+                        fixResult={fixResults[t.id]}
+                        onFix={applyFix}
+                      onPropose={proposeFix}
+                        onRescan={() => runClean(true)}
+                        scanning={cleanLoading} />
+                    ))}
+                    {cleanNothingToDo.length > 0 ? (
+                      <div className="space-y-2">
+                        <button className={btn} onClick={() => setCleanShowClear((v) => !v)}>
+                          <Check size={12} /> Nothing to clean · {cleanNothingToDo.length} {cleanShowClear ? 'HIDE' : 'SHOW'}
+                        </button>
+                        {cleanShowClear ? cleanNothingToDo.map((t, i) => (
+                          <Finding key={`clean-clear-${t.id}-${i}`} t={t} quiet withFix={false} siteName={siteName} siteUrl={siteUrl}
+                            fixBusy={fixingIds.includes(t.id)}
+                            fixPaused={cleanRunning || fixAllRunning}
+                            fixResult={fixResults[t.id]}
+                            onFix={applyFix}
+                      onPropose={proposeFix}
+                            onRescan={() => runClean(true)}
+                            scanning={cleanLoading} />
+                        )) : null}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {/* What the scan did NOT reach. Never a footnote: "found
+                      nothing" and "stopped looking" read identically otherwise. */}
+                  {cleanDetail?.hasLimits ? (
+                    <div className="border border-yellow-500/30 px-2.5 py-2 space-y-1">
+                      <div className="flex items-center gap-1.5">
+                        <Info size={11} className="shrink-0 text-yellow-500/85" />
+                        <span className="text-[9px] uppercase tracking-wider text-yellow-500/85">What this scan did not reach</span>
+                      </div>
+                      {cleanDetail.caveat ? (
+                        <div className="text-[10px] text-yellow-500/85 leading-relaxed">{cleanDetail.caveat}</div>
+                      ) : null}
+                      {cleanDetail.skipped.map((s, i) => (
+                        <div key={`skip-${i}`} className="text-[10px] text-ink-max leading-relaxed break-words">
+                          <span className="text-ink-max">{s.check}</span>
+                          {s.reached !== null && s.of !== null ? ` (reached ${s.reached} of ${s.of})` : ''}
+                          {' — '}{s.reason}
+                        </div>
+                      ))}
+                      {cleanDetail.measured.map((m, i) => (
+                        <div key={`lim-${i}`} className={faint}>{m}</div>
+                      ))}
+                    </div>
+                  ) : cleanDetail?.measured?.length ? (
+                    <div className="space-y-0.5">
+                      {cleanDetail.measured.map((m, i) => <div key={`lim-${i}`} className={faint}>{m}</div>)}
+                    </div>
+                  ) : null}
+                </>
+              ) : null}
+            </Section>
+
+            {/* Where an `updates` finding sends the operator; the brief highlight is
+                how they know they arrived. */}
+            <div ref={updatesRef}
+              className={`transition-colors duration-700 ${updatesFlash ? 'bg-primary/10 ring-1 ring-primary/40' : ''}`}>
+            <Section title="Updates" icon={<Package size={11} className="text-primary/45" />}>
+              <div className={`text-[11px] break-words ${updateTotal ? 'text-ink-max' : 'text-ink-max'}`}>
+                {plan?.message || 'This scan did not report update information.'}
+              </div>
+              {updateTotal > 0 && (
+                <div className="space-y-2">
+                  {/* Core is shown on its own: WordPress updating itself is a different decision. */}
+                  {plan?.hasCore && coreRows.length > 0 && (
+                    <div className="space-y-1">
+                      <div className={micro}>WordPress itself</div>
+                      {coreRows.map((c, i) => (
+                        <UpdateRow key={`core-${i}`} name="WordPress" from={c.current} to={c.version} strong />
+                      ))}
+                    </div>
+                  )}
+                  {otherRows.length > 0 && (
+                    <div className="space-y-1">
+                      <div className={micro}>Plugins and themes</div>
+                      {otherRows.map((r) => <UpdateRow key={r.key} name={r.name} kind={r.kind} from={r.from} to={r.to} />)}
+                    </div>
+                  )}
+                  {showApplyControl ? (
+                    <>
+                      {applying ? (
+                        <div className="flex items-center gap-1.5 text-[10px] text-ink-max">
+                          <Loader2 size={12} className="animate-spin shrink-0" />
+                          {applying === 'check'
+                            ? 'Checking what the site would do — nothing is being changed.'
+                            : 'Applying updates now — the site is being changed. Leave this panel open.'}
+                        </div>
+                      ) : null}
+
+                      {confirming ? (
+                        // Step two of two. Nothing has been sent: APPLY is the only
+                        // thing that calls the server, and the policy's own limits
+                        // still apply to what it will actually touch.
+                        <div className="border border-yellow-500/30 px-3 py-2.5 space-y-2">
+                          <div className="text-[11px] text-ink-max leading-relaxed">
+                            Apply {applyTargets} update{applyTargets === 1 ? '' : 's'} to {siteName}? WordPress will restore anything that fails.
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button className={`${btn} border-yellow-500/40`} onClick={() => runApply(false)} disabled={!!applying}>
+                              {applying === 'apply' ? <Loader2 size={12} className="animate-spin" /> : <ShieldCheck size={12} />}
+                              {applying === 'apply' ? 'APPLYING' : 'APPLY'}
+                            </button>
+                            <button className={btn} onClick={() => setConfirming(false)} disabled={!!applying}>
+                              <X size={12} /> CANCEL
+                            </button>
+                          </div>
+                          <div className="text-[9px] text-ink-max leading-relaxed">
+                            Nothing has been sent yet. Morpheus applies only the update kinds this site&apos;s policy allows, and snapshots each one before it starts.
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button className={btn} onClick={() => runApply(true)} disabled={!!applying}>
+                            {applying === 'check' ? <Loader2 size={12} className="animate-spin" /> : <ShieldCheck size={12} />} CHECK FIRST
+                          </button>
+                          <button className={btn} onClick={() => setConfirming(true)} disabled={!!applying}>
+                            <AlertTriangle size={12} /> APPLY NOW
+                          </button>
+                        </div>
+                      )}
+
+                      {runErr ? (
+                        <div className="border border-red-500/30 bg-red-500/5 px-3 py-2 space-y-1">
+                          <div className="text-[11px] text-red-300/90 break-words">{runErr.message}</div>
+                          <div className="text-[9px] text-ink-max leading-relaxed">
+                            {runErr.dryRun
+                              ? 'The check did not finish. A check changes nothing, so the site is exactly as it was.'
+                              : 'Morpheus cannot say from here whether the site was changed. RESCAN above to see the site as it is now before trying again.'}
+                          </div>
+                        </div>
+                      ) : null}
+                      {outcome ? <ApplyReport outcome={outcome} /> : null}
+                    </>
+                  ) : updateTotal > 0 && !policy ? (
+                    <div className={faint}>
+                      This scan did not carry the site&apos;s policy, so Morpheus cannot say what it may apply. RESCAN to try again.
+                    </div>
+                  ) : updateTotal > 0 && apply?.ok === false ? (
+                    // The site says it cannot write its own files, so an apply button
+                    // could only fail. Say why, and point at the reason.
+                    <div className="border border-red-500/30 bg-red-500/5 px-3 py-2 text-[10px] text-red-300/90 leading-relaxed">
+                      WordPress says it cannot write to this site&apos;s own files, so Morpheus will not offer to apply these. The section below, Can Morpheus update this site?, says why.
+                    </div>
+                  ) : (
+                    <div className="border border-primary/15 px-3 py-2 text-[10px] text-ink-max leading-relaxed">
+                      {canApply.length === 0
+                        ? 'Applying updates is switched off for this site, so the updates above can only be reported. Switch on plugin, theme or minor WordPress updates in SCHEDULED CHECKS below and save the policy.'
+                        : 'The updates above are all of a kind this site\u2019s policy only reports, so there is nothing here Morpheus may apply. Change that in SCHEDULED CHECKS below and save the policy.'}
+                    </div>
+                  )}
+                  {/* Said once, here, at the point where applying is offered. */}
+                  <div className="text-[9px] text-ink-max leading-relaxed">
+                    Every plugin and theme update is snapshotted before it is touched, and put back automatically if the new version does not install cleanly. A major WordPress update is never applied from here — it is listed in the findings above for you to run from wp-admin.
+                  </div>
+                </div>
+              )}
+            </Section>
+            </div>
+
+            <Section title="Can Morpheus update this site?" icon={<Server size={11} className="text-primary/45" />}>
+              {apply?.ok === false ? (
+                <div className="border border-red-500/30 bg-red-500/5 px-3 py-2 space-y-1">
+                  <div className="text-[11px] text-red-300/90 leading-relaxed break-words">
+                    {apply.message || 'Nothing can update this site from WordPress. This has to be fixed where the site is hosted, or in its file permissions.'}
+                  </div>
+                  {(apply.reasons || []).map(plain).filter(Boolean).map((r, i) => (
+                    <div key={i} className="text-[10px] text-red-300/80 break-words">{r}</div>
+                  ))}
+                </div>
+              ) : apply?.ok === true ? (
+                <div className="flex items-center gap-1.5 text-[10px] text-ink-max">
+                  <ShieldCheck size={11} className="shrink-0" /> Morpheus can write to this site&apos;s own files.
+                </div>
+              ) : (
+                <div className={faint}>This scan did not say whether the site can update its own files.</div>
+              )}
+              <div className="border border-primary/15 px-3 py-1">
+                <KV k="Filesystem access" v={host?.filesystem_method || '—'} />
+                <KV k="HTTPS" v={host?.ssl === true ? 'Yes' : host?.ssl === false ? 'No' : '—'} />
+                <KV k="PHP memory limit" v={host?.memory_limit || '—'} />
+              </div>
+            </Section>
+
+            <Section title="Automatic updates">
+              {!auto ? (
+                <div className={faint}>This scan did not report the automatic-update settings.</div>
+              ) : (
+                <div className="border border-primary/15 px-3 py-1">
+                  <KV k="Plugins" v={auto.plugins_global ? 'On' : 'Off'} />
+                  <KV k="Themes" v={auto.themes_global ? 'On' : 'Off'} />
+                  <KV k="Core — minor versions" v={coreSetting(auto.core_minor)} />
+                  <KV k="Core — major versions" v={coreSetting(auto.core_major)} />
+                  <KV k="The automatic updater" v={auto.automatic_updater_disabled ? 'Disabled entirely' : 'Enabled'} />
+                  {auto.core_constant ? <KV k="WP_AUTO_UPDATE_CORE constant" v={String(auto.core_constant)} /> : null}
+                </div>
+              )}
+            </Section>
+
+            {notRun.length > 0 && (
+              <div className="space-y-1 border-t border-primary/10 pt-2">
+                <div className={micro}>Not checked · {notRun.length}</div>
+                <div className={faint}>These tests did not run — that is not the same as passing.</div>
+                {notRun.map((a, i) => (
+                  <div key={`${a.id}-${i}`} className="text-[10px] text-ink-max break-words">
+                    <span className="text-ink-max">{a.label || a.id}</span>{a.reason ? ` — ${a.reason}` : ''}
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Last on purpose: the scan above is read-only; this part changes what Morpheus will do. */}
+        {policy && (
+          <div className="border-t border-primary/10 pt-3">
+            <Section title="SCHEDULED CHECKS" icon={<CalendarClock size={11} className="text-primary/45" />}>
+              <Toggle label="Monthly check" on={!!draft?.scan_enabled} disabled={saving}
+                hint="Morpheus looks at the site and reports what it finds. On its own this changes nothing."
+                onChange={(v) => setField('scan_enabled', v)} />
+              {!draft?.scan_enabled ? (
+                // Off means off: no day, no hour and no apply switches — they would imply a run that is not scheduled.
+                <div className="border border-primary/15 px-2.5 py-2 text-[10px] text-ink-max leading-relaxed">
+                  Monthly checks are off, so Morpheus will only look at this site when you ask it to — with RESCAN above. Nothing runs on a schedule and nothing is changed.
+                </div>
+              ) : (
+                <>
+                  <div className="border border-primary/15 px-2.5 py-2 space-y-1.5">
+                    <div className={micro}>When it runs · UTC</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="block">
+                        <span className={`${faint} block`}>Day of the month (1–28)</span>
+                        <select className={sel} value={draft?.day_of_month ?? 1} disabled={saving} onChange={(e) => setField('day_of_month', Number(e.target.value))}>
+                          {DAYS_OF_MONTH.map((d) => <option key={d} value={d} className="bg-black">{ORD(d)}</option>)}
+                        </select>
+                      </label>
+                      <label className="block">
+                        <span className={`${faint} block`}>Hour (UTC)</span>
+                        <select className={sel} value={draft?.hour_utc ?? 0} disabled={saving} onChange={(e) => setField('hour_utc', Number(e.target.value))}>
+                          {HOURS_UTC.map((h) => <option key={h} value={h} className="bg-black">{pad2(h)}:00 UTC</option>)}
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+                  <div className="border border-primary/15 px-2.5 py-2">
+                    <div className={micro}>Next check{dirty ? ' · from the saved policy' : ''}</div>
+                    {nextRun ? <div className="text-[11px] text-ink-max break-words">{nextRun}</div>
+                      : policy.scan_enabled
+                        ? <div className="text-[10px] text-ink-max">Not known — the server did not report a next run time for this policy.</div>
+                        : <div className="text-[10px] text-ink-max">None yet — the saved policy has the schedule off. Save and the server works out the next run.</div>}
+                  </div>
+                  {/* Yellow and away from the scan switch: these three change the live site; the scan does not. */}
+                  <div className="border border-yellow-500/30 px-2.5 py-2.5 space-y-2">
+                    <div className={`${micro} text-yellow-500/85`}>A scheduled check could also change the site</div>
+                    <div className="text-[9px] text-ink-max leading-relaxed">Each switch below changes the live site with nobody watching. Off means it is only reported.</div>
+                    <Toggle label="Plugin updates" disabled={saving} on={!!draft?.apply_plugins} onChange={(v) => setField('apply_plugins', v)}
+                      hint="Morpheus would install plugin updates on its own, with nobody watching." />
+                    <Toggle label="Theme updates" disabled={saving} on={!!draft?.apply_themes} onChange={(v) => setField('apply_themes', v)}
+                      hint="Morpheus would install theme updates on its own, with nobody watching." />
+                    <Toggle label="Minor WordPress updates" disabled={saving} on={!!draft?.apply_core_minor} onChange={(v) => setField('apply_core_minor', v)}
+                      hint="Morpheus would install minor and security WordPress updates on its own, with nobody watching." />
+                    {/* A rule, not a setting: there is no switch for it, and a major core update is never applied unattended. */}
+                    <div className="flex items-start gap-1.5 border-t border-yellow-500/20 pt-2">
+                      <ShieldCheck size={11} className="mt-[1px] shrink-0 text-yellow-500/85" />
+                      <span className="text-[9px] text-yellow-500/85 leading-relaxed">Major WordPress updates are reported, never applied.</span>
+                    </div>
+                  </div>
+                </>
+              )}
+              <div className="border border-primary/15 px-2.5 py-2 text-[10px] text-ink-max leading-relaxed">
+                {canApply.length === 0
+                  ? 'Scheduled checks are report-only on this site — Morpheus looks and tells you what it finds, and nothing is changed.'
+                  : `With nobody watching, Morpheus may apply ${wordList(canApply)} updates${reportOnly.length ? `, and reports ${wordList(reportOnly)} updates without applying them` : ''}.`}
+              </div>
+              <div className="border border-primary/15 px-2.5 py-2">
+                <div className={micro}>What this policy says{dirty ? ' · from the saved policy' : ''}</div>
+                <div className="text-[10px] text-ink-max leading-relaxed break-words">{policy.description || 'The server sent no description for this policy.'}</div>
+              </div>
+              {policy.exists === false ? <div className={faint}>No policy saved for this site yet — these are the safe defaults.</div> : null}
+              <div className="space-y-1.5">
+                <button className={`${btn} w-full`} onClick={savePolicyDraft} disabled={!dirty || saving}>
+                  {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} SAVE POLICY
+                </button>
+                {dirty && !saving ? <div className={faint}>Unsaved changes — the next run and description above still describe the saved policy.</div> : null}
+                {policyErr ? <div className="border border-red-500/30 bg-red-500/5 px-2.5 py-2 text-[10px] text-red-300/90 break-words">{policyErr}</div> : null}
+                {policySaved ? <div className="flex items-start gap-1.5 text-[10px] text-ink-max"><Check size={11} className="mt-[1px] shrink-0" /> {policySaved}</div> : null}
+              </div>
+            </Section>
+          </div>
+        )}
+
+        {/* ── UPTIME ─────────────────────────────────────────────────────
+            Whether the site has been ANSWERING, which is the one failure an
+            owner notices first and the only one Morpheus could not tell them
+            about: /status needs no secret and answers in every build of the
+            plugin, and nothing recorded it. Its own component, and it checks on
+            open only when what it holds is stale or absent. */}
+        <Section title="UPTIME" icon={<Clock size={11} className="text-primary/45" />}>
+          <UptimePanel projectId={projectId} />
+        </Section>
+      </div>
+    </div>
+  );
+}

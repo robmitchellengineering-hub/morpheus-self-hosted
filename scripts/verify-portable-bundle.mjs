@@ -1,0 +1,242 @@
+// Does the Portable Morpheus download still describe the product?
+//
+// WHY THIS EXISTS. The download used to be assembled in the browser from a mirror directory,
+// `public/portable-morpheus/_source/`, produced by a script whose own header said "Run after dev
+// changes". Nothing ran it and nothing checked it, so it drifted silently and for a month: measured
+// 2026-09-29 it mirrored `base44/` (last touched 2026-08-26) while the implementation had moved to
+// `server/src/` (touched that day). The download worked perfectly and handed out the superseded
+// codebase. Rob: "I can see we have lost the downloadable portable morpheus along the way somewhere."
+//
+// A mirror is a claim about a codebase, and it needs the same treatment as any other claim: something
+// that fails when it stops being true. So this guard asserts the three properties that make the drift
+// impossible rather than merely unlikely —
+//
+//   1. the bundle is GENERATED during the build, from the tree being built (not committed);
+//   2. the rule for what ships selects the real product and never the fossil tree;
+//   3. the page and the bundle say what they do NOT contain, because a download that implies an
+//      installer it does not have is the same class of lie as the copy `reality.mjs` catches.
+//
+// It is dependency-free and asserts the rule through the same import-free module the generator uses,
+// so it runs in CI's no-install guards job and cannot disagree with the thing it checks.
+//
+// Run:  node scripts/verify-portable-bundle.mjs
+import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { join, dirname, relative, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import {
+  selectPortableFiles, isPortableFile, portableBundleReadme, PORTABLE_EXCLUDE,
+  PORTABLE_INCLUDE_FILES, PORTABLE_INCLUDE_ROOTS,
+} from '../server/src/lib/portableBundle.js';
+import { platformSteps } from '../server/src/lib/platformCli.js';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const read = (p) => readFileSync(join(ROOT, p), 'utf8');
+
+let failures = 0;
+let checks = 0;
+function check(name, actual, expected) {
+  checks++;
+  const a = JSON.stringify(actual), e = JSON.stringify(expected);
+  if (a === e) console.log(`  PASS  ${name}`);
+  else { console.log(`  FAIL  ${name}\n          expected ${e}\n          got      ${a}`); failures++; }
+}
+
+console.log('\n1. the rule selects the product');
+check('the frontend ships', isPortableFile('src/App.jsx'), true);
+check('…including the Command Deck', isPortableFile('src/pages/CommandDeck/DeckHome.jsx'), true);
+check('the backend ships — this IS the local server', isPortableFile('server/src/functions/chatWithMorpheus.js'), true);
+check('the schema ships', isPortableFile('server/prisma/schema.prisma'), true);
+check('the local Postgres script ships — the installer delegates to it', isPortableFile('server/scripts/dev-db.mjs'), true);
+check('the verification suite ships, so a self-hoster can check it', isPortableFile('scripts/verify.mjs'), true);
+check('root manifests ship', [isPortableFile('package.json'), isPortableFile('README.md')].join(','), 'true,true');
+// MEASURED 2026-10-12, by installing the published zip on a real machine. The bundle shipped every
+// server file EXCEPT its own manifest, so the installer's third step (`npm install` in `server/`)
+// installed nothing — the root manifest does not declare `embedded-postgres`; only this one does — and
+// step 4 died with "Postgres binaries not found" on every platform. The download could not be installed
+// by the one command it tells a person to run, and its own printed remedy could not work either.
+const serverManifest = JSON.parse(read('server/package.json'));
+const serverDeps = { ...serverManifest.dependencies, ...serverManifest.devDependencies };
+check('the server manifest ships — npm install in server/ is a no-op without it', isPortableFile('server/package.json'), true);
+check('…and it is the manifest that declares the local database the installer needs',
+  'embedded-postgres' in serverDeps, true);
+check('the Postgres script and the manifest it needs ship together',
+  [isPortableFile('server/scripts/dev-db.mjs'), isPortableFile('server/package.json')].join(','), 'true,true');
+// A RULE THAT PROMISES A FILE THE DEPLOY TREE DOES NOT HAVE IS A PROMISE THE DOWNLOAD CANNOT KEEP.
+// MEASURED 2026-10-12, and it was this guard's own blind spot: `server/package-lock.json` was added to
+// the rule as a good idea and shipped in NO published zip ever, because it is gitignored — the deploy
+// tree is a git checkout and the file is not in it. Every check above asked isPortableFile(), which
+// answers "does the RULE select it" and said yes. This asks git, which is the thing that decides whether
+// the file is there to select. It is the same mistake in miniature as the four missing files this rule
+// was fixed for: the rule is not the artifact.
+const includedButIgnored = [...PORTABLE_INCLUDE_FILES, ...PORTABLE_INCLUDE_ROOTS].filter((p) => {
+  try {
+    execFileSync('git', ['check-ignore', '--quiet', p], { cwd: ROOT, stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+});
+check('no included path is gitignored — it would never reach the deploy tree', includedButIgnored, []);
+// The build's entry list is IN the build config, so this asks the config instead of someone's memory of
+// the tree — which is how the same omission happened twice. MEASURED 2026-10-12: vite's SECOND entry is a
+// root file (`deck.html`, distinct from `public/deck.html`) that the bundle did not ship, so the
+// downloaded product failed its own build with `Could not resolve entry module "deck.html"`. Scoped to
+// the `input` block on purpose: the config's other `path.resolve` is the `@` alias to `./src`, a
+// directory this rule describes with a trailing slash.
+const viteConfig = read('vite.config.js');
+const inputBlock = viteConfig.slice(viteConfig.indexOf('input: {'), viteConfig.indexOf('}', viteConfig.indexOf('input: {')));
+const entryFiles = [...inputBlock.matchAll(/path\.resolve\(__dirname,\s*'([^']+)'\)/g)].map((m) => m[1]);
+check('the build config names its entries (parser sanity)', entryFiles.length >= 2, true);
+check('…and every entry the build resolves ships in the bundle',
+  entryFiles.filter((f) => !isPortableFile(f)), []);
+
+console.log('\n2. …and never a fossil, a secret, or a copy of itself');
+// The measured failure: the mirror shipped base44/ for a month after the port.
+check('the pre-port base44 tree does NOT ship', isPortableFile('base44/functions/autonomousBuildStep/entry.ts'), false);
+// …but the one module the shipped frontend IMPORTS must ship with it. MEASURED 2026-10-12 on the
+// published download: `BackendPanel.jsx` imports this file, `base44/` was excluded wholesale, and the
+// build died with `Could not resolve "../../../base44/shared/infrastructureComponents"` — the fourth
+// thing that stopped the download from installing. A rule that ships an importer has to ship the import.
+check('the base44 module the frontend still imports ships',
+  isPortableFile('base44/shared/infrastructureComponents.ts'), true);
+check('…because a shipped component imports it (so this cannot be dropped by accident)',
+  /base44\/shared\/infrastructureComponents/.test(read('src/components/matrix/BackendPanel.jsx')), true);
+// THE SAME PRINCIPLE, ONE TREE OVER. The bundle ships the verification suite in full, and that suite
+// IMPORTS the broker's metering module (`scripts/verify-cloud-metering.mjs`) and READS its server.js,
+// README and manifest. With `hosted-broker/` excluded the suite died at module load, so the broker's
+// source now ships. What ships is code; the service stays separately deployed and its `.env` is
+// excluded below.
+check('the broker the shipped verification suite imports ships',
+  isPortableFile('hosted-broker/src/metering.js'), true);
+check('…and the manifest scripts/verify-license-terms.mjs reads',
+  isPortableFile('hosted-broker/package.json'), true);
+check('…because a shipped script really imports it (so this cannot be dropped by accident)',
+  /from '\.\.\/hosted-broker\/src\/metering\.js'/.test(read('scripts/verify-cloud-metering.mjs')), true);
+// The nesting trap: this directory contains the download page's own assets, inside public/.
+check('the portable download machinery does not nest inside itself',
+  isPortableFile('public/portable-morpheus/_source/README.md'), false);
+check('…even though public/ itself ships', isPortableFile('public/deck.html'), true);
+check('credentials never ship',
+  [isPortableFile('server/.env'), isPortableFile('server/.env.prodsql'), isPortableFile('server/.env.northflank'), isPortableFile('hosted-broker/.env')].join(','), 'false,false,false,false');
+check('build products never ship',
+  [isPortableFile('node_modules/jszip/index.js'), isPortableFile('dist/assets/main.js'), isPortableFile('public/morpheus-wordpress-plugin.zip')].join(','), 'false,false,false');
+check('dotfiles never ship', isPortableFile('.github/workflows/ci.yml'), false);
+check('every exclusion names a reason in the module', PORTABLE_EXCLUDE.length >= 5, true);
+
+console.log('\n3. selection is stable and deduplicated');
+check('duplicates collapse and the order is stable',
+  selectPortableFiles(['src/B.jsx', 'src/A.jsx', 'src/A.jsx']), ['src/A.jsx', 'src/B.jsx']);
+check('junk in the list cannot become a file', selectPortableFiles(['', null, undefined, 'src/']).length, 1);
+
+console.log('\n4. the real repository selects the whole product');
+const walk = (dir, out = []) => {
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    if (e.isDirectory() && (e.name === 'node_modules' || e.name === 'dist' || e.name.startsWith('.'))) continue;
+    const full = join(dir, e.name);
+    if (e.isDirectory()) walk(full, out);
+    else if (e.isFile()) out.push(relative(ROOT, full).split(sep).join('/'));
+  }
+  return out;
+};
+const real = selectPortableFiles(walk(ROOT));
+check('it selects hundreds of files (parser sanity)', real.length > 300, true);
+check('the backend is in there', real.includes('server/src/functions/chatWithMorpheus.js'), true);
+check('the Command Deck is in there', real.some((p) => p.startsWith('src/pages/CommandDeck/')), true);
+check('the schema is in there', real.includes('server/prisma/schema.prisma'), true);
+// Narrowed 2026-10-12. `base44/shared/` now ships on purpose: the frontend still imports one of its
+// modules, and excluding the directory wholesale is what broke the download's build. The mistake this
+// check exists for is the SUPERSEDED pre-port functions tree, so that is what it asserts — plus that
+// nothing else from base44/ creeps in beside the one directory that is allowed.
+check('no pre-port base44 functions path survives', real.filter((p) => p.startsWith('base44/functions/')), []);
+check('…and only base44/shared/ comes from base44/',
+  [...new Set(real.filter((p) => p.startsWith('base44/')).map((p) => p.split('/')[1]))], ['shared']);
+check('no portable mirror path survives', real.filter((p) => p.startsWith('public/portable-morpheus/')), []);
+check('no credential path survives', real.filter((p) => /(^|\/)\.env/.test(p)), []);
+
+console.log('\n5. the bundle cannot go stale again');
+// The whole point: regeneration is part of the build, so nobody has to remember.
+check('postbuild regenerates the bundle on every build',
+  /"postbuild":\s*"[^"]*scripts\/build-portable-bundle\.mjs/.test(read('package.json')), true);
+check('the generator uses this same rule (guard and generator cannot disagree)',
+  /from '\.\.\/server\/src\/lib\/portableBundle\.js'/.test(read('scripts/build-portable-bundle.mjs'))
+  && /selectPortableFiles\(/.test(read('scripts/build-portable-bundle.mjs')), true);
+check('the hand-run mirror script is gone', existsSync(join(ROOT, 'scripts/sync-portable-morpheus.mjs')), false);
+check('no committed mirror survives', existsSync(join(ROOT, 'public/portable-morpheus')), false);
+check('the rule module is import-free, so this runs without an install',
+  /^\s*import\s/m.test(read('server/src/lib/portableBundle.js')), false);
+
+console.log('\n6. the download page links the build product, and claims nothing more');
+const page = read('src/pages/PortableMorpheusDownload.jsx');
+check('the page no longer assembles a zip in the browser', /from 'jszip'/.test(page), false);
+check('…it links the artifact the build wrote', /portable-morpheus\.zip/.test(page), true);
+check('…and it does not fetch files one request at a time', /fetch\(`\$\{import\.meta\.env\.BASE_URL\}portable-morpheus\//.test(page), false);
+// The page used to promise "no wizard, no remote access" — true when written, false once
+// portable:setup and portable:remote shipped. A public page that UNDER-sells a shipped feature is the
+// same claim-vs-system failure as one that over-sells, and it is the one nobody notices because it
+// looks modest. So the surface that sells the download is pinned to what the download now is.
+// Against the RENDERED TEXT, not the file: the first version of this check failed on the comment
+// explaining the change, because the comment quotes the phrase it removed. Fifth time in this suite
+// that an assertion matched its own prose — comments out, then assert.
+const pageText = page.replace(/\{\/\*[\s\S]*?\*\/\}/g, '').split('\n').map((l) => l.replace(/\/\/.*$/, '')).join('\n');
+check('the download page no longer claims there is no setup command',
+  /no wizard/i.test(pageText), false);
+check('…nor that remote access does not exist', /no remote access/i.test(pageText), false);
+check('…and it names the honest limitation instead: not a signed app', /notarised|quarantine/i.test(pageText), true);
+check('…and still says no AI is configured until you choose one', /No AI provider is configured/i.test(pageText), true);
+
+console.log('\n7. the bundle says what it does NOT contain');
+// A download that implies an installer it does not have is the claim-vs-system class this repo keeps
+// catching. The README is generated, so it cannot describe a different build than it ships with.
+const readme = portableBundleReadme({ commit: 'abc1234', builtAt: '2026-09-29T00:00:00Z', fileCount: 42 });
+check('it names the commit it was built from', /abc1234/.test(readme), true);
+// This check used to assert the README said "No installer and no first-run wizard". That was true
+// when it was written and false by the time anyone read it again: `npm run portable:setup` had
+// shipped. An assertion that pins an ABSENCE is the one kind that rots silently in the safe direction
+// — it kept passing while the download told every stranger to install Postgres by hand. So it now
+// asserts what IS there, and separately what is still honestly missing.
+check('its section heading matches what it now contains', /## What is in here, and what is still missing/.test(readme), true);
+check('it tells the downloader the one command that sets this up', /npm run portable:setup/.test(readme), true);
+check('…and the command to start it, and that a launcher ships', /npm run portable:start/.test(readme) && /launcher/.test(readme), true);
+check('…and that a signed native app is what is still missing, not an installer',
+  /no signed native app/.test(readme) && /quarantines/.test(readme), true);
+check('it no longer claims there is no installer at all', /No installer and no first-run wizard/.test(readme), false);
+check('it says the setup generates the gateway signing key, so a stranger need not invent it',
+  /signs AI gateway tokens with/.test(readme) && /cannot invent/.test(readme), true);
+// The download has to be ACTIONABLE on the machine it lands on, and the README is the only file a
+// downloader is certain to read. So the platform table is asserted against the same table the
+// installer prints (lib/platformCli.js) — a copy in the README would be free to drift from the
+// launcher that actually ships, which is exactly how the previous "no installer" claim survived.
+check('it gives the one command that installs it, for a terminal in the unzipped folder',
+  /node scripts\/portable-setup\.mjs/.test(readme), true);
+for (const p of ['darwin', 'linux', 'win32']) {
+  const steps = platformSteps(p);
+  check(`the README table covers ${steps.label}`, new RegExp(`\\*\\*${steps.label}\\*\\*`).test(readme), true);
+  check(`…and names ${steps.label}'s launcher, the one that ships`, readme.includes(steps.launcher), true);
+  const action = steps.prerequisites.find((s) => !/^No /.test(s.need));
+  check(`…and a command ${steps.label} users actually type`,
+    action.how.split(/[;,]/)[0].replace(/^\s+|\s+$/g, '').split(' ').slice(0, 4).join(' ').length > 3
+    && readme.includes(action.how.match(/(sudo [a-z-]+ install [a-z-]+|brew install node|xcode-select --install|https:\/\/nodejs\.org)/)?.[0] || '\u0000'), true);
+  check(`…and says where the database comes from, so nobody installs one`,
+    /No database|No toolchain/.test(readme), true);
+}
+check('it says what a WORKING install looks like, not just what to type',
+  /opens http:\/\/localhost:4500 by itself/.test(readme) && /sign-in page/.test(readme), true);
+check('it tells the reader they can read another platform\'s steps from this machine',
+  /--check --platform win32/.test(readme), true);
+check('it says remote access needs Tailscale installed by the operator, not by us',
+  /Remote access needs Tailscale, which you install/.test(readme) && /does not install Tailscale/.test(readme), true);
+check('it says the AI is yours to choose, and that the paid default needs a broker that is not deployed',
+  /No AI configured until you choose one/.test(readme) && /not deployed/.test(readme), true);
+check('it names the Command Deck, because that is the scope', /Command Deck/.test(readme), true);
+
+console.log('\n8. the authority reports it');
+check('reality.mjs knows the portable bundle exists',
+  /portable/i.test(read('scripts/reality.mjs')), true);
+
+console.log(`\n${checks - failures}/${checks} checks passed`);
+if (failures) {
+  console.log('\n✗ the portable download would describe something other than the product\n');
+  process.exit(1);
+}
+console.log('the portable download is generated from the code it ships\n');

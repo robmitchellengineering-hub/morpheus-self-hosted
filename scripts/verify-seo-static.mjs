@@ -1,0 +1,470 @@
+// The machine-readable surface of morpheus.nz must actually be there, be accurate, and
+// not be text hidden from people.
+//
+// WHY THIS EXISTS
+//
+// Until 2026-09-25 a crawler fetching morpheus.nz got a 1.5 KB React shell whose entire
+// content was `<title>Morpheus</title>`. Marketing tools and AI answer engines said they
+// could not tell what the product was — correctly. `/robots.txt` and `/sitemap.xml` did
+// not exist either, because public/_redirects' SPA catch-all answered every path with
+// index.html, so a request for a sitemap returned HTML.
+//
+// Three things this guards, in order of how badly they would hurt:
+//
+//   1. CLOAKING. The tempting fix is text hidden in the page so only crawlers read it.
+//      That is a Google spam-policy violation and would penalise the domain this is meant
+//      to promote. So the prerendered block must carry no hiding style, and the same
+//      capability list must be rendered by the page itself (`Landing.jsx`) — the check
+//      for "is this a prerender or a bot-only block" is literally "does a human see it".
+//   2. DRIFT. The explainer documents said Morpheus builds for "6 platforms" while the
+//      code shipped **ten**, and said there is "no free tier" while six accounts held the
+//      live 200-credit grant. Anything published in metadata is now quoted by search
+//      engines and AI tools, so the target list and the capability list are asserted
+//      against the code, not trusted.
+//   3. DEGRADING to a silent no-op. The generator writes into dist/, which does not exist
+//      in CI's no-install guards job — so this runs the REAL generator against a temp
+//      directory instead of skipping. A check that cannot run is not a pass.
+//
+// Dependency-free. Run:  node scripts/verify-seo-static.mjs
+
+import { readFileSync, writeFileSync, existsSync, readdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { tmpdir } from 'node:os';
+import { spawnSync } from 'node:child_process';
+import { renderUserManual } from '../server/src/lib/appUserManual.js';
+import { getCompileTarget } from '../server/src/lib/compile-targets/index.js';
+import { MUTATIONS, UNPROVEN_BASELINE } from './guard-mutations.mjs';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+let pass = 0; let fail = 0;
+const check = (name, ok, detail) => {
+  if (ok) { pass++; console.log(`  ok   ${name}`); } else { fail++; console.log(`  FAIL ${name}${detail ? ` — ${detail}` : ''}`); }
+};
+
+const caps = JSON.parse(readFileSync(join(ROOT, 'src/lib/morpheusCapabilities.json'), 'utf8'));
+
+// ── The target list must match the code ──────────────────────────────────────────────
+const TARGET_DIR = join(ROOT, 'server/src/lib/compile-targets');
+const codeTargets = existsSync(TARGET_DIR)
+  ? readdirSync(TARGET_DIR)
+    .filter((f) => f.endsWith('.js') && !['index.js', 'types.js', 'utils.js', 'workflow-renderer.js'].includes(f))
+    .map((f) => f.replace(/\.js$/, '')).sort()
+  : null;
+check('read the compile targets from the code (not skipped)',
+  Array.isArray(codeTargets) && codeTargets.length > 0, TARGET_DIR);
+check('capabilities JSON has a buildTargets list',
+  Array.isArray(caps.buildTargets) && caps.buildTargets.length > 0);
+check(`the published target list matches server/src/lib/compile-targets (${(codeTargets || []).length} targets)`,
+  JSON.stringify([...(caps.buildTargets || [])].sort()) === JSON.stringify(codeTargets),
+  `published ${JSON.stringify(caps.buildTargets)} vs code ${JSON.stringify(codeTargets)}`);
+
+// ── Run the real generator against a temp directory ──────────────────────────────────
+const tmp = mkdtempSync(join(tmpdir(), 'seo-verify-'));
+let generated = null;
+try {
+  writeFileSync(join(tmp, 'index.html'), readFileSync(join(ROOT, 'index.html'), 'utf8'));
+  const run = spawnSync(process.execPath, [join(ROOT, 'scripts/seo-static.mjs')], {
+    env: { ...process.env, SEO_DIST: tmp }, encoding: 'utf8',
+  });
+  check('the generator runs against a plain index.html copy',
+    run.status === 0, (run.stderr || run.stdout || '').trim().slice(0, 300));
+  if (run.status === 0) {
+    generated = {
+      html: readFileSync(join(tmp, 'index.html'), 'utf8'),
+      llms: existsSync(join(tmp, 'llms.txt')) ? readFileSync(join(tmp, 'llms.txt'), 'utf8') : null,
+      sitemap: existsSync(join(tmp, 'sitemap.xml')) ? readFileSync(join(tmp, 'sitemap.xml'), 'utf8') : null,
+      manual: existsSync(join(tmp, 'manual.html')) ? readFileSync(join(tmp, 'manual.html'), 'utf8') : null,
+      downloads: existsSync(join(tmp, 'downloads.html')) ? readFileSync(join(tmp, 'downloads.html'), 'utf8') : null,
+      llmsFull: existsSync(join(tmp, 'llms-full.txt')) ? readFileSync(join(tmp, 'llms-full.txt'), 'utf8') : null,
+      verification: existsSync(join(tmp, 'verification.html')) ? readFileSync(join(tmp, 'verification.html'), 'utf8') : null,
+    };
+  }
+} finally {
+  rmSync(tmp, { recursive: true, force: true });
+}
+
+if (generated) {
+  const { html, llms, sitemap, manual, llmsFull, downloads, verification } = generated;
+
+  // ── The prerender is complete: everything a reader needs is in the HTML ────────────
+  const missing = [];
+  for (const c of caps.capabilities) {
+    if (!html.includes(c.title)) missing.push(`title:${c.title}`);
+    // Bodies contain typographic quotes and arrows; compare on a normalised form.
+    const norm = (s) => String(s).replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"');
+    if (!norm(html).includes(norm(c.body).slice(0, 60))) missing.push(`body:${c.title}`);
+  }
+  check(`every capability (${caps.capabilities.length}) is in the static HTML`,
+    missing.length === 0, missing.slice(0, 4).join(', '));
+  check('the principle, intro and closing are in the static HTML',
+    html.includes('Full-stack software, built by chat') && html.includes('You own every file'));
+  check('every build target is in the static HTML',
+    caps.buildTargets.every((t) => html.includes(t)));
+  check('the pricing line is in the static HTML (and promises no subscription, not "no free tier")',
+    /200 free credits/.test(html) && !/no free tier/i.test(html));
+
+  // ── The user manual is published, for machines AND people ─────────────────────────
+  // It is generated from the same module that writes USER-MANUAL.txt into a build, so the published manual
+  // cannot drift from the one a user receives. Asserting that equivalence is the whole point of these checks:
+  // a hand-maintained copy of the manual would pass a "does it mention installing" test and still be wrong.
+  check('a manual page is published', Boolean(manual) && manual.length > 5000);
+  if (manual) {
+    check('…with a section for every registered target',
+      codeTargets.every((t) => manual.includes(`id="${t}"`)),
+      codeTargets.filter((t) => !manual.includes(`id="${t}"`)).join(', '));
+    check('…carrying each target\'s install steps, not just its name',
+      (manual.match(/INSTALLING IT/g) || []).length >= codeTargets.length);
+    // Recompute the guide here and look for a contiguous chunk of it in the page. The page is HTML-escaped, so
+    // the comparison is made against the unescaped text — otherwise a phrase containing an em dash could never
+    // match and the check would fail for the wrong reason (or, worse, pass on a shorter coincidental string).
+    const unescapeHtml = (v) => v.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'").replace(/&amp;/g, '&');
+    // Exactly what the generator does, label included: passing the id as the label produced "a web-app build"
+    // where the page says "a Web App build", and the check failed one word in — which is the check doing its job
+    // on a mismatch that was mine, not the generator's.
+    const guideFor = renderUserManual({
+      projectName: 'Your project', target: codeTargets[0],
+      targetLabel: getCompileTarget(codeTargets[0])?.label || codeTargets[0], files: [],
+    });
+    // A CONTIGUOUS slice, blank lines included: filtering the blanks out — the obvious "tidy" move — breaks the
+    // match at the first blank line and the check fails on a page that is perfectly correct.
+    const chunk = guideFor.split('\n').slice(2, 9).join('\n');
+    check('…and its text IS the renderer\'s output, recomputed here rather than trusted',
+      chunk.length > 120 && unescapeHtml(manual).includes(chunk),
+      chunk.slice(0, 60));
+    check('…visible, with no hiding style anywhere in it',
+      !/display\s*:\s*none|visibility\s*:\s*hidden/i.test(manual));
+    check('…and it says it is the manual, in the title a reader and a crawler both see',
+      /<title>[^<]*manual/i.test(manual));
+  }
+  check('a full-text file is published for a tool that fetches one URL',
+    Boolean(llmsFull) && codeTargets.every((t) => llmsFull.includes(t)));
+  check('llms.txt points at both', Boolean(llms) && llms.includes('/manual') && llms.includes('/llms-full.txt'));
+  check('the sitemap lists the manual as a real page', Boolean(sitemap) && sitemap.includes('/manual'));
+
+  // ── THE DOWNLOADS PAGE, AND THE DISTINCTION IT EXISTS TO MAKE ────────────────────────────────────────
+  // Rob, 2026-10-05: *"if we have standalone versions of the plugin and the other formats where are they
+  // available for download"* — and the answer was nowhere. The rigs kept 7-day artifacts and the site
+  // offered no file, so a visitor whose next move is "show me one" had no page to land on.
+  check('the capabilities JSON carries the download list', Boolean(caps.downloads) && Array.isArray(caps.downloads.items));
+  if (caps.downloads) {
+    // ⚠️ NOT the landing prerender: the downloads live on their own route, and putting them in the
+    // landing page's prerendered block would be content the landing page does not show, which is cloaking.
+    // The first version of this assertion looked for them in `html` and failed — correctly, and the failure
+    // is the reason this comment exists.
+    //
+    // The machine surface that DOES carry them is the two briefs, generated from the same JSON as the page,
+    // so a model asked "what can I download from Morpheus" has the answer without fetching a client-rendered
+    // route at all.
+    check('every download is in llms.txt and llms-full.txt, so a model asked what it can get has an answer',
+      [llms, llmsFull].every((x) => Boolean(x) && caps.downloads.items.every((it) => x.includes(it.name))), true);
+    check('the sitemap lists it as a real page', Boolean(sitemap) && sitemap.includes('<loc>https://morpheus.nz/downloads</loc>'));
+    // A page a human cannot reach is a page only crawlers see — the line this whole file holds.
+    // ⚠️ A STATIC PAGE, NOT AN SPA ROUTE — the same shape as /manual, and the guard checks the same three
+    // things for it. A URL whose content is prerendered must NOT also have a React route: one URL with two
+    // renderings looks different after a reload, and the two drift.
+    check('a downloads page is published as a real, crawlable file', Boolean(downloads) && downloads.length > 1000);
+    check('…carrying every download', Boolean(downloads) && caps.downloads.items.every((it) => downloads.includes(it.name)));
+    check('…and the distinction, so a reader who only sees this page still gets it',
+      Boolean(downloads) && /in your own project/.test(downloads));
+    check('…visible, with no hiding style anywhere in it', !/display\s*:\s*none|visibility\s*:\s*hidden/i.test(downloads || ''));
+    check('…with a title a reader and a crawler both see', /<title>[^<]*downloads/i.test(downloads || ''));
+    // Read here rather than reusing `landingSrcForAudio`, which is declared further down this file: the
+    // first version of this check referenced it and died on the temporal dead zone, which is the second
+    // time in this file that a const declared later has been read earlier.
+    const landingForDownloads = readFileSync(join(ROOT, 'src/pages/Landing.jsx'), 'utf8');
+    check('the landing page links to it with a real <a>, above the capability list',
+      /href="\/downloads"/.test(landingForDownloads), true);
+    // ORDERING, and it is the difference between a page and a 404: Netlify takes the FIRST matching rule.
+    const dlRedirects = readFileSync(join(ROOT, 'public/_redirects'), 'utf8');
+    check('the /downloads rewrite comes BEFORE the SPA catch-all',
+      dlRedirects.indexOf('/downloads  /downloads.html') >= 0
+      && dlRedirects.indexOf('/downloads  /downloads.html') < dlRedirects.indexOf('/*  /index.html'), true);
+    check('…and there is no React route for it, so the URL has ONE rendering',
+      !/path="\/downloads"/.test(readFileSync(join(ROOT, 'src/App.jsx'), 'utf8')), true);
+    // ⚠️ THE DISTINCTION IS THE HARD PART, NOT THE LIST. Almost nothing Morpheus produces is a download
+    // from us — it is built in the user's own repository and lands in their own `_compiled/`. A downloads
+    // page that blurred that would be selling a builder as a shop, so the sentence is asserted rather
+    // than left to survive on its own.
+    check('…and the page states what is NOT a download, rather than leaving it to be inferred',
+      /in your own project/.test(caps.downloads.own)
+      && /in your own project/.test(downloads || '')
+      && /built inside your own GitHub repository/.test(llms || ''), true);
+    // An entry pointing at somebody else's origin must be an absolute URL, or the SPA router takes it and
+    // 404s; an in-app route must be relative. One wrong one is a dead download link on the page whose whole
+    // job is downloads.
+    const bad = caps.downloads.items.filter((it) => !/^(https?:\/\/|\/)/.test(String(it.href)));
+    check('every download link is either an absolute URL or an in-app route', bad.map((it) => it.name), []);
+    check('the plugin demo points at a RELEASE rather than at a workflow artifact that expires in 7 days',
+      /\/releases\/tag\//.test(String(caps.downloads.pluginRelease)), true);
+  }
+  // ORDERING, and it is the difference between a page and a 404: Netlify takes the FIRST matching rule, so the
+  // manual rewrite has to come before the SPA catch-all or the clean URL serves index.html.
+  const redirects = readFileSync(join(ROOT, 'public/_redirects'), 'utf8');
+  const manualRule = redirects.indexOf('/manual  /manual.html');
+  const catchAll = redirects.indexOf('/*  /index.html');
+  check('the /manual rewrite comes BEFORE the SPA catch-all', manualRule >= 0 && catchAll > manualRule);
+  // A page no human can reach is a page only crawlers see, which is the line this file exists to hold.
+  // (named apart from the later `landingSrc`, which reads the same file for the capability checks)
+  const landingForManualLink = readFileSync(join(ROOT, 'src/pages/Landing.jsx'), 'utf8');
+  const landingSrcForAudio = landingForManualLink;
+  check('the landing page links to it visibly, with a real <a> (it is not an SPA route)',
+    landingForManualLink.includes('href="/manual"'));
+
+  // ── THE VERIFICATION PAGE, AND THE SPEC IT PUBLISHES ────────────────────────────────
+  // A real static page (the /manual and /downloads shape), not an SPA route. Its NUMBERS are injected
+  // at build time from the code, so the page cannot drift — the guard recomputes them here and fails if
+  // the generated page disagrees. The spec itself is count-free prose, checked only for existence.
+  const liveGuardCount = readdirSync(join(ROOT, 'scripts')).filter((f) => f.startsWith('verify-') && f.endsWith('.mjs')).length;
+  const liveHazardCount = (readFileSync(join(ROOT, 'KNOWN-HAZARDS.md'), 'utf8').match(/^## H\d+/gm) || []).length;
+  check('a verification page is generated', Boolean(verification) && verification.length > 2000);
+  if (verification) {
+    check('…with the LIVE guard count, not a typed number', verification.includes(String(liveGuardCount)));
+    check('…with the LIVE hazard count, not a typed number', verification.includes(String(liveHazardCount)));
+    check('…with the LIVE mutation-test count, not a typed number', verification.includes(String(MUTATIONS.length)));
+    check('…with the LIVE unproven baseline, not a typed number', verification.includes(String(UNPROVEN_BASELINE)));
+    check('…and no unreplaced template token left in it',
+      !verification.includes('__GUARD_COUNT__') && !verification.includes('__HAZARD_COUNT__')
+      && !verification.includes('__MUTATION_COUNT__') && !verification.includes('__UNPROVEN_BASELINE__'));
+    check('…visible, with no hiding style anywhere in it', !/display\s*:\s*none|visibility\s*:\s*hidden/i.test(verification));
+    check('…with a title and headline a reader and a crawler both see',
+      /<title>[^<]*verification/i.test(verification) && verification.includes('unlocks code verification'));
+    check('…linking the specification with a real download',
+      /href="\/verification-spec\.md"[^>]*download/.test(verification));
+    check('…linking the GitHub repo (the adoption surface)',
+      verification.includes('github.com/robmitchellengineering-hub/valiant-verification'));
+    check('…linking the investor brief (PDF) with a real download',
+      /href="\/verification-gap-investor\.pdf"[^>]*download/.test(verification));
+  }
+  check('the open specification file exists and is substantive',
+    existsSync(join(ROOT, 'public', 'verification-spec.md'))
+    && readFileSync(join(ROOT, 'public', 'verification-spec.md'), 'utf8').length > 1000);
+  check('the investor brief PDF is published',
+    existsSync(join(ROOT, 'public', 'verification-gap-investor.pdf')));
+  const verRedirects = readFileSync(join(ROOT, 'public/_redirects'), 'utf8');
+  check('the /verification rewrite comes BEFORE the SPA catch-all',
+    verRedirects.indexOf('/verification  /verification.html') >= 0
+    && verRedirects.indexOf('/verification  /verification.html') < verRedirects.indexOf('/*  /index.html'), true);
+  check('…and there is no React route for it, so the URL has ONE rendering',
+    !/path="\/verification"/.test(readFileSync(join(ROOT, 'src/App.jsx'), 'utf8')), true);
+  check('the sitemap lists it as a real page', Boolean(sitemap) && sitemap.includes('<loc>https://morpheus.nz/verification</loc>'));
+  check('llms.txt points at it', Boolean(llms) && llms.includes('/verification'));
+
+  // ── Structured data parses and says the right things ──────────────────────────────
+  const ldMatch = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
+  let ld = null;
+  try { ld = ldMatch ? JSON.parse(ldMatch[1]) : null; } catch { ld = null; }
+  check('a JSON-LD block is present and parses', !!ld);
+  const types = ld ? (ld['@graph'] || []).map((n) => n['@type']) : [];
+  check('JSON-LD carries Organization, SoftwareApplication and FAQPage',
+    ['Organization', 'SoftwareApplication', 'FAQPage'].every((t) => types.includes(t)), types.join(','));
+  if (ld) {
+    const app = ld['@graph'].find((n) => n['@type'] === 'SoftwareApplication');
+    check('SoftwareApplication lists every capability as a feature',
+      Array.isArray(app.featureList) && app.featureList.length === caps.capabilities.length);
+    const faq = ld['@graph'].find((n) => n['@type'] === 'FAQPage');
+    const answers = JSON.stringify(faq.mainEntity);
+    check('the FAQ states the real target count', answers.includes(String(caps.buildTargets.length)));
+    check('the FAQ does not repeat either false claim',
+      !/no free tier/i.test(answers) && !/not stored on Morpheus/i.test(answers));
+    check('the FAQ answers what the "digital possibility engine" framing means, in the JSON\'s own words',
+      Boolean(caps.possibility) && answers.includes(caps.possibility.body));
+  }
+
+  // ── A machine reading morpheus.nz must learn the PRODUCT'S OWN NOUNS ──────────────
+  // Rob, 2026-10-04: talking to an external Gemini about morpheus.nz, it *"cant tell me anything
+  // about the plugin or the personal assistant or talk about it as a digital possibility engine"*.
+  // It could not, and the reason was measurable: every machine surface was generated from a
+  // capability list whose 16 entries named none of them — "Voice" was Jarvis with his name filed
+  // off. So the nouns are pinned here, against the JSON, on the two surfaces a model actually
+  // reads. A rename in the JSON that never reaches the generated files fails this.
+  const NOUNS = ['Jarvis', 'Command Deck', 'dock', 'WordPress', 'digital possibility engine'];
+  for (const [what, text] of [['the static HTML', html], ['llms.txt', llms], ['llms-full.txt', llmsFull]]) {
+    check(`${what} names the assistant, the Deck, the dock and the possibility engine`,
+      Boolean(text) && NOUNS.every((n) => text.includes(n)),
+      NOUNS.filter((n) => !text || !text.includes(n)).join(', '));
+  }
+  const appSrc = readFileSync(join(ROOT, 'src/App.jsx'), 'utf8');
+  // The nouns must be CAPABILITIES, not only prose. This is the specific shape of the original
+  // failure: "Voice" was in the list and Jarvis was not, so the feature list a model reads named
+  // the ability and never the assistant. A title rename that drops the name fails here even
+  // though the word survives in the intro and in Jarvis's own capability body.
+  check('the capability list names the assistant, the Deck and the Dock in its own titles',
+    ['Jarvis', 'Command Deck', 'Dock'].every((n) => caps.capabilities.some((c) => c.title.includes(n))),
+    caps.capabilities.map((c) => c.title).join(' | '));
+  check('the Deck and Jarvis are real routes in the app, not only words in copy',
+    appSrc.includes('path="/deck"') && appSrc.includes('path="jarvis"'));
+  check('the dock script the copy promises is the one that ships',
+    existsSync(join(ROOT, 'public/plugin.js'))
+    && /data-dock/.test(readFileSync(join(ROOT, 'public/plugin.js'), 'utf8')));
+  // A count in published copy is the "6 platforms" failure waiting to happen, so it is read
+  // from the registry that defines the widgets and asserted against the sentence that quotes it.
+  const widgetCount = (readFileSync(join(ROOT, 'src/pages/CommandDeck/deckWidgets.js'), 'utf8').match(/key:\s*'/g) || []).length;
+  check(`the published widget count is the registry's (${widgetCount})`,
+    widgetCount > 0 && caps.capabilities.some((c) => c.body.includes(`${widgetCount} widgets`)),
+    `deckWidgets.js has ${widgetCount}`);
+  check('the possibility paragraph is in the prerender and in llms.txt, verbatim from the JSON',
+    Boolean(caps.possibility)
+    && html.includes(caps.possibility.title) && html.includes(caps.possibility.body.slice(0, 60))
+    && llms.includes(caps.possibility.title) && llms.includes(caps.possibility.body.slice(0, 60)));
+
+  // ── THE AUDIO PATHWAY: documented in full, and documented HONESTLY ───────────────
+  // This is the most claim-dense block on the site — three platform-specific build routes, a list of
+  // measurements, and four things that are NOT built — so it is asserted from both ends. The shipped half
+  // has to be backed by code (a real target id, a platform that target's own label states, formats that
+  // target's own build verifies), and the planned half has to stay out of it.
+  const audioDoc = caps.audio;
+  check('the capabilities JSON carries the audio docs', Boolean(audioDoc) && Array.isArray(audioDoc.routes));
+  if (audioDoc) {
+    // 1. Every audio route in the registry is documented, and nothing is documented that is not a target.
+    // A fourth plugin route added to the picker without a line here fails this — which is the failure mode
+    // that put "6 platforms" in the explainer docs while ten shipped.
+    const audioTargets = (caps.buildTargets || []).filter((t) => t.startsWith('audio-plugin-')).sort();
+    check(`every audio-plugin target is documented (${audioTargets.length})`,
+      JSON.stringify(audioDoc.routes.map((r) => r.target).sort()) === JSON.stringify(audioTargets),
+      `documented ${JSON.stringify(audioDoc.routes.map((r) => r.target))} vs registry ${JSON.stringify(audioTargets)}`);
+
+    // 2. THE PLATFORM IN THE COPY IS THE PLATFORM IN THE PICKER. Rob, 2026-10-04: a plugin format exists on
+    // more than one platform, so a label naming only the formats reads as "builds for whatever you are on".
+    // The doc makes the same promise in a different string, and the two are compared here rather than
+    // trusted to match. A route that says macOS while its target says Windows would otherwise ship.
+    const wrongPlatform = audioDoc.routes.filter((r) => {
+      const t = getCompileTarget(r.target);
+      return !t || !String(t.label).includes(r.platform);
+    });
+    check('each documented platform is the platform its target\'s own label states',
+      wrongPlatform.length === 0,
+      wrongPlatform.map((r) => `${r.target}: copy says "${r.platform}", label is "${getCompileTarget(r.target)?.label}"`).join('; '));
+
+    // 3. THE FORMATS ARE THE BUILD'S, not the copywriter's. Read from each target's own declaration — the
+    // `formats: [...]` its proof step walks, or the exported *_FORMATS constant it builds that list from —
+    // so claiming an Audio Unit on the Windows route (which has no AU and does not check for one) fails.
+    const declaredFormats = (id) => {
+      const src = readFileSync(join(ROOT, 'server/src/lib/compile-targets', `${id}.js`), 'utf8');
+      const out = new Set();
+      for (const line of src.split('\n')) {
+        if (!/formats\s*:|_FORMATS\s*=/.test(line)) continue;
+        for (const m of line.matchAll(/'([A-Za-z0-9]+)'/g)) out.add(m[1]);
+      }
+      return out;
+    };
+    const unbacked = [];
+    for (const r of audioDoc.routes) {
+      const declared = declaredFormats(r.target);
+      for (const f of r.formatTokens || []) if (!declared.has(f)) unbacked.push(`${r.target}: ${f}`);
+    }
+    check('every format the docs promise is one that target\'s own build verifies',
+      unbacked.length === 0, unbacked.join(', '));
+    check('…and every route declares which formats it promises',
+      audioDoc.routes.every((r) => Array.isArray(r.formatTokens) && r.formatTokens.length > 0));
+
+    // 4. THE SHIPPED HALF MUST NOT NAME WHAT IS ONLY PLANNED. This is the check that keeps a roadmap from
+    // being skim-read as an inventory: the words that only belong to the bench half are pinned, so moving
+    // an FPGA pedal or a microcontroller amp into the shipped half fails here rather than in production.
+    const shippedText = [
+      audioDoc.title, audioDoc.intro, audioDoc.routesIntro, audioDoc.measured,
+      ...audioDoc.routes.flatMap((r) => [r.runsOn, r.formats, r.detail]),
+      ...audioDoc.steps.flatMap((st) => [st.action, st.detail]),
+    ].join(' ').toLowerCase();
+    const BENCH_ONLY = ['fpga', 'microcontroller', 'effects pedals', 'practice amp'];
+    check('the bench-only nouns are kept out of the shipped half',
+      BENCH_ONLY.every((n) => !shippedText.includes(n)),
+      BENCH_ONLY.filter((n) => shippedText.includes(n)).join(', '));
+    const benchText = audioDoc.planned.map((pl) => `${pl.what} ${pl.status} ${pl.detail}`).join(' ').toLowerCase();
+    check('…and the planned half really does describe them', BENCH_ONLY.every((n) => benchText.includes(n)),
+      BENCH_ONLY.filter((n) => !benchText.includes(n)).join(', '));
+    check('every planned item says plainly that it is not shipped',
+      audioDoc.planned.length > 0 && audioDoc.planned.every((pl) => pl.what && pl.status && pl.detail));
+    check('…and no planned item has been quietly restated in the shipped half',
+      audioDoc.planned.every((pl) => !shippedText.includes(pl.what.toLowerCase())));
+
+    // 5. On all three machine surfaces, and mirrored by the page. A doc that only machines can read is the
+    // cloaking line this file exists to hold; a doc only the page shows is invisible to the answer engines
+    // that made the original failure worth fixing.
+    for (const [what, text] of [['the static HTML', html], ['llms.txt', llms], ['llms-full.txt', llmsFull]]) {
+      check(`${what} carries the audio docs in full`,
+        Boolean(text) && text.includes(audioDoc.title) && text.includes(audioDoc.measured.slice(0, 60))
+        && audioDoc.routes.every((r) => text.includes(r.target))
+        && audioDoc.planned.every((pl) => text.includes(pl.what)));
+    }
+    check('the page itself renders the audio docs (a prerender, not a bot-only block)',
+      /MORPHEUS_AUDIO\.routes\.map/.test(landingSrcForAudio)
+      && /MORPHEUS_AUDIO\.steps\.map/.test(landingSrcForAudio)
+      && /MORPHEUS_AUDIO\.planned\.map/.test(landingSrcForAudio));
+    check('…and the page\'s own headings are literals, so the prose-ink rule can attribute them',
+      (landingSrcForAudio.match(/\/\/ (AUDIO|THREE ROUTES, EACH FOR ONE MACHINE|USING IT|WHAT THE BUILD PROVES|ON THE BENCH, NOT IN THE APP YET)/g) || []).length >= 5);
+  }
+
+  // ── CLOAKING: the prerendered block must not be hidden from people ────────────────
+  const section = (html.match(/<section id="seo-landing"[\s\S]*?<\/section>/) || [''])[0];
+  check('the prerendered section exists', section.length > 500);
+  check('the prerendered section carries NO hiding style (cloaking)',
+    !/\bstyle\s*=/.test(section)
+    && !/(display\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0|font-size\s*:\s*0|text-indent\s*:\s*-|left\s*:\s*-\d)/i.test(section),
+    section.slice(0, 160));
+  check('the prerendered section is not inside a <noscript> or hidden container',
+    !/<noscript[\s\S]*<section id="seo-landing"/.test(html));
+  // The decisive check: a prerender mirrors what the page renders. A bot-only block does
+  // not, and this is the line between the two.
+  const landingSrc = readFileSync(join(ROOT, 'src/pages/Landing.jsx'), 'utf8');
+  check('the page itself renders the possibility paragraph too (it is not in the prerender only)',
+    /MORPHEUS_POSSIBILITY\.title/.test(landingSrc) && /MORPHEUS_POSSIBILITY\.body/.test(landingSrc));
+  check('the page itself renders the same capability list (a prerender, not a bot-only block)',
+    /MORPHEUS_CAPABILITIES\.map/.test(landingSrc) && /MORPHEUS_BUILD_TARGETS\.map/.test(landingSrc));
+  check('the landing page shows all capabilities, not a scroll box',
+    !/max-h-\d+ overflow-y-auto[\s\S]{0,120}MORPHEUS_CAPABILITIES/.test(landingSrc));
+
+  // ── llms.txt and sitemap.xml ──────────────────────────────────────────────────────
+  check('llms.txt was written', !!llms);
+  if (llms) {
+    check('llms.txt carries the principle and every capability',
+      llms.includes('Full-stack software, built by chat')
+      && caps.capabilities.every((c) => llms.includes(c.title)));
+    check('llms.txt carries the targets and the pricing line',
+      caps.buildTargets.every((t) => llms.includes(t)) && /200 free credits/.test(llms));
+    check('llms.txt is not an HTML page (the SPA catch-all bug)',
+      !/^\s*<!doctype html/i.test(llms));
+  }
+  check('sitemap.xml was written', !!sitemap);
+  if (sitemap) {
+    check('sitemap.xml is XML, not an HTML page served by the catch-all',
+      /^<\?xml/.test(sitemap) && /<urlset/.test(sitemap) && !/<!doctype html/i.test(sitemap));
+    check('sitemap.xml lists the public routes', ['/', '/start', '/market', '/portable-morpheus'].every((r) => sitemap.includes(`<loc>https://morpheus.nz${r}</loc>`)));
+  }
+}
+
+// ── The static sources ───────────────────────────────────────────────────────────────
+const indexSrc = readFileSync(join(ROOT, 'index.html'), 'utf8');
+check('index.html has a meta description', /<meta name="description" content="[^"]{40,}"/.test(indexSrc));
+check('index.html has a canonical link', /rel="canonical"/.test(indexSrc));
+check('index.html has Open Graph tags', /property="og:title"/.test(indexSrc) && /property="og:description"/.test(indexSrc) && /property="og:image"/.test(indexSrc));
+check('index.html has a Twitter card', /name="twitter:card"/.test(indexSrc));
+check('index.html keeps the prerender marker the generator needs', indexSrc.includes('<!-- seo-static:prerender'));
+
+const robotsPath = join(ROOT, 'public/robots.txt');
+check('public/robots.txt exists', existsSync(robotsPath));
+if (existsSync(robotsPath)) {
+  const robots = readFileSync(robotsPath, 'utf8');
+  check('robots.txt is a real robots file, not the SPA shell',
+    /User-agent:/i.test(robots) && !/<!doctype html/i.test(robots));
+  check('robots.txt advertises the sitemap', /^Sitemap:\s*https:\/\/morpheus\.nz\/sitemap\.xml/m.test(robots));
+  check('robots.txt explicitly welcomes AI crawlers (the point of the exercise)',
+    ['GPTBot', 'ClaudeBot', 'PerplexityBot', 'OAI-SearchBot'].every((b) => robots.includes(b)));
+  check('robots.txt keeps the signed-in app out of the index',
+    /Disallow:\s*\/workspace/.test(robots) && /Disallow:\s*\/deck/.test(robots));
+}
+
+const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+check('the generator is wired into the build (postbuild)',
+  /seo-static\.mjs/.test(pkg.scripts?.postbuild || ''), pkg.scripts?.postbuild || '(none)');
+
+console.log(`\n${pass}/${pass + fail} checks passed`);
+if (fail) {
+  console.log('\nThe machine-readable surface is missing, drifted from the code, or is text');
+  console.log('hidden from people. Hidden text is cloaking — it would penalise the domain');
+  console.log('this exists to promote. Publish it as metadata and structured data, and make');
+  console.log('the prerender the thing the page actually shows.\n');
+  process.exit(1);
+}
+console.log('morpheus.nz tells machines what it is, from the same source the page renders.\n');

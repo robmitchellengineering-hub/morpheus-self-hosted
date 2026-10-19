@@ -1,0 +1,285 @@
+{
+  "principle": "Full-stack software, built by chat. Shipped from your pocket.",
+  "intro": "Morpheus turns a phone into a complete software studio. Describe what you want in plain language; Morpheus writes the real code, builds the backend, compiles a native binary, and deploys it — no laptop, no lock-in, no illusions. You own every file. And here, done means verified — every check is proven to actually fail, the part the rest of the market hasn't built. We did. Beside it, in the same account, sits Jarvis: a personal assistant with his own long-term memory, a Command Deck for the rest of your life, and a dock you can put on a website you already run. Both are being built toward a digital possibility engine — everything you tell them, brought together, so it can surface opportunities and possibilities you had not seen.",
+  "closing": "Morpheus is not a no-code toy. It's a real dev team in your pocket — one that ships standalone, deployable software you fully own, and verifies it before it's called done.",
+  "possibility": {
+    "title": "A digital possibility engine",
+    "body": "The destination rather than a shipped feature — and the reason Jarvis exists. Everything you tell Morpheus and Jarvis is kept, brought together, and read back so it can surface opportunities and possibilities you had not seen. Jarvis's suggestions is the first working piece of it: he reads across your own Command Deck unprompted and tells you what you may have missed, and switching that widget off stops it dead with no AI spend."
+  },
+  "buildTargets": ["android-apk", "arduino-firmware", "ios-app", "linux-binary", "linux-distro", "mac-app", "python-package", "rpi-distro", "web-app", "windows-exe", "audio-plugin-macos", "audio-plugin-windows", "audio-plugin-linux-arm"],
+  "audio": {
+    "title": "Audio — your amp, in the box",
+    "intro": "Morpheus builds real audio plugins around a neural amp model. Put a .nam model in the project, add a cabinet impulse response if you have one, pick the target for your machine and COMPILE — the build runs on a hosted runner, and the finished plugin lands in _compiled/ with a proof file the build itself wrote. The model is played by NeuralAmpModelerCore, the reference implementation of the format, and the signal path around it is a measured design rather than a sketch: input trim, gate, bass/mid/treble, the neural model, the cabinet, output.",
+    "routesIntro": "A plugin format exists on more than one platform, so a target that named only its formats would read as \"builds for whatever you are on\". Each route below is one machine and says so; a plugin compiled for the wrong one loads nowhere and explains nothing.",
+    "routes": [
+      {
+        "target": "audio-plugin-macos",
+        "platform": "macOS",
+        "runsOn": "macOS only",
+        "formats": "VST3, Audio Unit, CLAP, and a standalone app",
+        "formatTokens": ["VST3", "AU", "CLAP", "standalone"],
+        "detail": "The only route that can produce an Audio Unit, because there is no AU outside Apple's platforms."
+      },
+      {
+        "target": "audio-plugin-windows",
+        "platform": "Windows",
+        "runsOn": "Windows only",
+        "formats": "VST3, CLAP, and a standalone app",
+        "formatTokens": ["VST3", "CLAP", "standalone"],
+        "detail": "No Audio Unit, and that is not an omission — it is what Windows hosts load."
+      },
+      {
+        "target": "audio-plugin-linux-arm",
+        "platform": "Linux ARM",
+        "runsOn": "64-bit ARM Linux only (a Raspberry Pi 4 or 5, for instance)",
+        "formats": "VST3, CLAP, and a standalone app",
+        "formatTokens": ["VST3", "CLAP", "standalone"],
+        "detail": "A 64-bit ARM ELF, which is what a Raspberry Pi runs — not an x86 Linux binary."
+      }
+    ],
+    "steps": [
+      {
+        "action": "Get a model",
+        "detail": "A .nam file — train your own, or download one. Put it in the project: models/amp.nam is what the builder looks for first, and the compile panel tells you which file it found, or says there is none."
+      },
+      {
+        "action": "Add a speaker",
+        "detail": "Optional, but it matters: a modelled amp on its own sounds like a bee in a jar. Upload a cabinet impulse response as a .wav in the CABINET dialog and it is baked into the plugin — nothing to install beside it. Only the first 4096 samples are convolved, so a 48 kHz IR of roughly 85 ms is the whole of it."
+      },
+      {
+        "action": "Arrange the signal path",
+        "detail": "The COMPILE panel's SIGNAL PATH dialog is the plugin's own block diagram: the blocks in the order the audio runs, move one with the arrows, switch one off, set each control's default. Add a Drive — a clean path and a clipped path summed, so the harmonics arrive without the level moving — a Delay, or a Spring reverb, a tank of three springs whose controls set how long it rings and how dark it is. Anywhere in the path, before or after the amp model. It is saved into the project's morpheus.plugin.json, so the file says what the plugin does. Every block carries its own On/Off switch inside the plugin, beside its controls: a block switched off here is still built in and opens switched off, so it can be turned on while you play without a rebuild — and it keeps its control either way, because a host stores automation against a control's id."
+      },
+      {
+        "action": "Pick your machine",
+        "detail": "audio-plugin-macos, audio-plugin-windows or audio-plugin-linux-arm — whichever one you will actually open it on. They are not interchangeable."
+      },
+      {
+        "action": "Compile and install",
+        "detail": "COMPILE pushes the project to your own GitHub and runs the build there. When it finishes the plugin is in _compiled/ with BUILD-PROOF.txt beside it. Unzip, and put the VST3, AU or CLAP in your plugin folder; the standalone needs no installation at all."
+      },
+      {
+        "action": "Play it",
+        "detail": "The full signal path is six controls, all of them in your host's automation list: Input (±24 dB), Gate (off to 0 dB), Bass, Mid and Treble (±12 dB each) and Output — the count is whatever your signal path has, and the ids do not move when you rearrange it. The gate's bottom position is OFF rather than a very low threshold, so it is exactly transparent when you do not want it."
+      }
+    ],
+    "measured": "The proof is a measurement the build makes and writes down, not a claim. The plugin's own entry point and NeuralAmpModelerCore's own renderer were given the same dry signal from the same pinned commit and compared sample by sample: they agree to −144.0 dB on a 64-bit ARM runner. The chain around it was measured the same way — bass, mid and treble each inside 0.5 dB of the filter that designed them, the cabinet nulling to −147.5 dB against a direct convolution of its own impulse response, and the gate taking the quiet part 44.8 dB below the loud one.",
+    "planned": [
+      {
+        "what": "A capture rig",
+        "status": "built and measured, in the repository rather than in the app",
+        "detail": "The awkward part of capturing an amp is not the recording, it is knowing whether the recording can be trained on. Morpheus can now fetch the re-amp signal the trainer accepts, check a recorded pair against the trainer's own rules before anyone spends an hour of GPU time — sample rate, length, whether the amp held still for the whole take, the delay it will be aligned at — and then measure the model that comes back against the recording. Today that is a command-line tool in the repository, not a panel in the app."
+      },
+      {
+        "what": "A Raspberry Pi you plug in and play",
+        "status": "planned",
+        "detail": "The plugin above runs on a Pi. A bootable image that carries the plugin, the audio routing and the first-boot setup, controlled from your phone, is the next step — the image target exists, it is the audio host that does not yet."
+      },
+      {
+        "what": "A practice amp with no operating system",
+        "status": "planned",
+        "detail": "The same model in a small microcontroller, for the cheapest and most deterministic tier: no OS, no buffering, fixed latency."
+      },
+      {
+        "what": "Effects pedals and instruments that are programmable logic",
+        "status": "planned",
+        "detail": "Running quantized models on an FPGA. The open question is not whether a network fits — it is what low bit-widths cost the sound, and that gets measured before anything is bought."
+      }
+    ]
+  },
+  "downloads": {
+    "title": "Downloads",
+    "intro": "Everything Morpheus hands you as a file, in one place. Most of what you make is deliberately not here: your builds land in your own project, in your own repository, in _compiled/ — which is the point.",
+    "pluginRelease": "https://github.com/robmitchellengineering-hub/morpheus-self-hosted/releases/tag/plugin-demo",
+    "items": [
+      {
+        "name": "Portable Morpheus",
+        "platform": "macOS · Windows · Linux",
+        "what": "The whole product — the builder and the Command Deck — running on your own machine. Your data stays with you, and nothing stops working if you stop paying.",
+        "href": "/portable-morpheus",
+        "note": "A ZIP of the product's own source, generated at build time from the repository. Published source, not open source — see the notice inside."
+      },
+      {
+        "name": "The user manual",
+        "platform": "Every target",
+        "what": "How to install and run what Morpheus builds, for every target it builds — including what each platform's unsigned-software warning means, and how to get past it.",
+        "href": "/manual",
+        "note": "Generated at build time from the same module that writes USER-MANUAL.txt into every build, so the published manual cannot drift from the one a download carries."
+      },
+      {
+        "name": "Audio plugin — demo builds",
+        "platform": "Windows · Linux AArch64 · macOS on request",
+        "what": "A prebuilt plugin you can load in a DAW today: the project owner's own Marshall JCM 800 2203 captured in four states, through one Marshall G12M 4x12 captured with four mics, into a drive, a three-band tone stack, a delay and a spring reverb, in VST3, CLAP and a standalone app.",
+        "href": "https://github.com/robmitchellengineering-hub/morpheus-self-hosted/releases/tag/plugin-demo",
+        "note": "Unsigned, so your platform will warn once. All four captures and all four cabinets are included, and you switch between them with the Capture and Speaker controls in the plugin's own panel or the host's parameter list. This is the demo rig and not the product — what Morpheus makes for you is a plugin built in your own repository around your own model and your own cabinet."
+      },
+      {
+        "name": "Marketplace templates",
+        "platform": "Any target",
+        "what": "Working projects other people have published — buy one or install it into your workspace in a tap, and read every file before you run it.",
+        "href": "/market",
+        "note": "Published by other users, not by us. Sellers get a cut."
+      }
+    ],
+    "ownHeading": "What you compile is not a download from us",
+    "own": "Every target compiles inside your own GitHub repository and its output lands in _compiled/ in your own project: an Android APK, an iOS app, a macOS app, a Windows EXE, a Linux binary, a Raspberry Pi image, a full Linux distro, a Python package, a web app, or a VST3 / Audio Unit / CLAP plugin. That is the difference between a download page and a build tool — the file is yours, in your account, from your source."
+  },
+  "capabilities": [
+    { "title": "Chat-to-code", "body": "Describe an app in a sentence; Morpheus writes production-ready frontend and backend code you can read, edit, and own. No pseudo-code, no placeholders.", "workflow": "Type your request in the chat bar → Morpheus plans the file structure → writes each file in full → runs a review pass → saves to the file tree. Tap REVERT beneath your message to undo that prompt." },
+    { "title": "Autonomous build pipeline", "body": "A self-correcting loop: compile → run → on failure, an AI agent reads the logs, writes a fix, and recompiles — only escalating to you when it's truly stuck.", "workflow": "Tap the bot icon in the chat bar → describe the full scope → watch the multi-step log in real time → STOP anytime. On a failed step it reads the error logs, writes a fix, and recompiles automatically." },
+    { "title": "Verification — done means verified", "body": "Most AI coding tools call a build done the moment the model stops typing. Morpheus doesn't. Its Valiant verification makes done mean verified: 130 automated guards assert real failure modes, the ones that can be proven are mutation-tested so each has been shown to actually fail, the merge gate is enforced by name so a skipped check is a fail, and the reviewer runs on a different model so it can never grade its own work.", "workflow": "Every build runs the full guard suite and the mutation proof before it's called done — a green result means the checks ran. The build's own record tells you exactly what was verified." },
+    { "title": "One chat, every target", "body": "Compile the same project to a web app, Windows EXE, macOS app, Linux binary, Android APK, iOS app, Python package, or Arduino firmware — all from your phone.", "workflow": "Pick a compile target in the toolbar → tap COMPILE → Morpheus pushes a GitHub Actions workflow → the build runs on a hosted runner → the artifact lands in _compiled/ ready to download." },
+    { "title": "Audio plugins — a modelled amp, compiled for your machine", "body": "Compile a real VST3, Audio Unit or CLAP plugin around a neural amp model and a cabinet impulse response, for macOS, Windows or 64-bit ARM Linux. The model is baked into the binary and played by the reference implementation of the format, so there is nothing to install beside it. The signal path — input trim, gate, three-band tone, the model, the cabinet — is measured against a reference on every build, and the build writes what it verified into your download.", "workflow": "Open a project → put your .nam in the file tree (models/ is searched first) → CABINET dialog to add a speaker impulse response if you have one → SIGNAL PATH to arrange the blocks and their order → set the target to audio-plugin-macos, audio-plugin-windows or audio-plugin-linux-arm → COMPILE → unzip _compiled/ and load the plugin in your DAW. BUILD-PROOF.txt beside it is the build's own record of what it checked." },
+    { "title": "Bootable OS images", "body": "Bake your app into a Raspberry Pi image or a full PC/server Linux distro (Debian/Ubuntu/Fedora) that boots and runs your software on first start. Customise hostname, timezone, locale, SSH, and packages at build time.", "workflow": "Open Distro Config → set hostname, timezone, locale, SSH keys, packages → COMPILE → flash the .img to an SD card with flash.sh, or push it to a remote device with flash-network.sh over SSH." },
+    { "title": "Auto-generated backends", "body": "Morpheus plans, writes, and deploys a backend (API, database, auth) for your app, then wires the frontend to it automatically.", "workflow": "Open the Architect → describe the API → Morpheus plans the schema and routes → generates the server code → deploy to a connected host → use Wire to Backend to point the frontend at the live URL." },
+    { "title": "Marketplace", "body": "Publish your project as a paid template; browse, buy, and install others' templates in one tap. Sellers get a cut, buyers get working code.", "workflow": "Finish a project → Marketplace panel → Publish tab → add icon, screenshots, description, price (min $0.50) → Publish. Buyers tap BUY → Stripe checkout → download the ZIP, or tap INSTALL to copy it into their workspace." },
+    { "title": "Network flashing", "body": "Push a finished OS image straight to a Pi or server over SSH — no SD-card swapping, no disk juggling." },
+    { "title": "GitHub, end-to-end", "body": "OAuth in, import existing repos, push new code, and trigger remote builds via GitHub Actions — your code lives in your own account." },
+    { "title": "Live deploy with log-pulling", "body": "Connect Cloudflare, Vercel, Supabase and others; Morpheus deploys and then pulls live logs back so you can watch it run." },
+    { "title": "AI diagnosis", "body": "When a build or deploy breaks, an AI agent analyses the real error logs and either auto-fixes or hands you a precise, actionable next step." },
+    { "title": "Dependency sync", "body": "One tap updates every dependency across npm, pip, Maven, Cargo, Go, Gem, Composer, Gradle, and PlatformIO — nested manifests included." },
+    { "title": "Cost transparency", "body": "Every AI action shows its estimated compute cost in USD up front, so you always know what you're spending." },
+    { "title": "Perpetual project memory", "body": "Every message you type and every file Morpheus writes is stored permanently with the construct. On each build, the full conversation history and the complete file tree are fed back in as context — so Morpheus never forgets a requirement, a decision, or a fix from earlier in the project. The more you tell him, the better he builds.", "workflow": "Just chat normally — every prompt is saved to the construct's permanent record. When you ask for the next change, Morpheus re-reads the entire history and all current files before building, so earlier decisions carry forward automatically." },
+    { "title": "Searchable project history", "body": "An important diagnostics tool. Every chat message, build log, tool action, diagnosis, and file snapshot is stored permanently and searchable end-to-end. When something breaks or a requirement drifts, search the full record to find exactly when, why, and what changed — no scrolling, no guessing.", "workflow": "Open the History panel → BUILD LOGS to search event details and tool names; SNAPSHOTS to find a saved state by label; CHAT to search every message Morpheus has ever written for this construct. Each tab shows a live match count and highlights results in context." },
+    { "title": "Help mode", "body": "Toggle it on and tap any feature; Morpheus explains what it does and how to use it, inline." },
+    { "title": "Voice", "body": "On demand, Morpheus speaks its replies aloud — for hands-free building on the go." },
+    { "title": "Jarvis — the personal assistant", "body": "Morpheus is the builder; Jarvis is the assistant — a second product in the same account, at /deck, with his own connections, his own long-term memory and his own chat history rather than a view onto Morpheus's. You talk or dictate freely and Jarvis splits what you said into separate thoughts, files each one where it belongs — a task, a strategy note, something worth keeping, or one of the five life streams (health, money, home, people, growth) — assigns the owner, and keeps your original words instead of replacing them with a summary. Ask him for a synthesis and he reasons across everything he has been told; turn on Voice and he reads the reply aloud as it is being written.", "workflow": "Open /deck → type or dictate into Brain dump, the capture box pinned to the top of the page → Jarvis separates the thoughts, assigns each to the right stream and the right person, and remembers all of it. Ask him anything in the Jarvis tab — every message is kept in his permanent history and read back to him as context." },
+    { "title": "Command Deck — a dashboard for your own life", "body": "Jarvis's home: a configurable dashboard at /deck with 15 widgets — the five life streams (health, money, home, people, growth), a task board, an inbox, a calendar, strategy, a signal chain and a knowledge base, with the brain-dump capture box pinned first and a permanent record behind every one. Each account sees only its own Deck, and which widgets appear, and in what order, is per account.", "workflow": "Open /deck → Deck Settings → Widgets to switch widgets on or off and reorder them. Jarvis's suggestions is also the per-account opt-out from proactive insight: switch it off and he stops reading across your Deck unprompted, and no AI credit is spent on it." },
+    { "title": "Morpheus Dock — the plugin for a site you already run", "body": "Put Morpheus on your own website. Mint a scoped widget token, paste one script tag, and the site gets the dock: the same chat, deploy, site-health, shop, pages, SEO and traffic panels, floating over your own pages. It renders inside a shadow root, so the host site's CSS cannot bleed in or out, and it passes the page you are looking at into the chat so answers can be grounded in what is on screen. The Morpheus WordPress plugin ships the same dock and also carries Morpheus's deploys onto the live site, signed with an HMAC the plugin verifies.", "workflow": "Project → WEBSITE panel → EMBED tab → create a token, ticking the scopes you want (chat, deploy, store, SEO, traffic; the secret is shown once and only its hash is stored) → copy the script tag onto the site, or use one-tap dock setup to push it to a connected WordPress site. The floating corner dock comes from data-dock=\"1\"; without it the panel drops inline where the tag sits. Revoke a token at any time from the same list." }
+  ],
+  "examples": [
+    {
+      "title": "Build a Task Tracker from Scratch",
+      "scenario": "From an empty workspace to a running web app in four messages. This is the most common path: you describe, Morpheus writes, you refine, you export.",
+      "steps": [
+        { "action": "Create the project", "note": "Tap NEW CONSTRUCT, give it a name, and pick a compile target.", "screen": "NEW CONSTRUCT", "lines": [
+          "> Name: Task Tracker",
+          "> Target: web-app",
+          "> Description: A simple task tracker",
+          "[OK] Project \"Task Tracker\" created",
+          "[..] Workspace ready"
+        ]},
+        { "action": "Describe what you want", "note": "Type your request in plain English. Morpheus plans the files, writes them, and runs a review pass.", "screen": "CHAT", "lines": [
+          "> Build a task tracker. Add a task, mark it done, delete it. Clean modern UI.",
+          "M: Planning 4 files...",
+          "M:   src/App.jsx",
+          "M:   src/components/TaskForm.jsx",
+          "M:   src/components/TaskItem.jsx",
+          "M:   src/index.css",
+          "M: Writing src/App.jsx ... done",
+          "M: Writing src/components/TaskForm.jsx ... done",
+          "M: Review pass: no issues found.",
+          "[OK] 4 files saved to the file tree"
+        ]},
+        { "action": "See it run", "note": "The preview panel builds automatically and renders your app live.", "screen": "PREVIEW", "lines": [
+          "[..] Building preview...",
+          "[OK] Preview ready",
+          "M: Your app is running in the preview panel.",
+          "M: Try adding a task — it updates instantly."
+        ]},
+        { "action": "Refine and export", "note": "Ask for changes in chat; each prompt only touches the files it needs. Tap REVERT under a message to undo it. ZIP downloads the whole project.", "screen": "CHAT + EXPORT", "lines": [
+          "> Make the Add button green and larger.",
+          "M: Updated TaskForm.jsx — button now bg-green, h-12.",
+          "[OK] 1 file updated",
+          "> [ZIP] tapped",
+          "[OK] Task-Tracker.zip downloaded (8 files)"
+        ]}
+      ]
+    },
+    {
+      "title": "Compile to an Android APK",
+      "scenario": "Turn the same project into an installable Android app. Morpheus pushes your code to GitHub, triggers a build on a hosted runner, and drops the APK into your project.",
+      "steps": [
+        { "action": "Pick the target", "note": "Change the compile target in the toolbar to android apk.", "screen": "TOOLBAR", "lines": [
+          "> Compile target: android apk",
+          "[..] Target set"
+        ]},
+        { "action": "Compile", "note": "Tap COMPILE. Morpheus creates a repo, pushes your code, and runs a GitHub Actions workflow that builds the APK.", "screen": "COMPILE", "lines": [
+          "[..] Pushing to GitHub...",
+          "[OK] Repo created: morpheus/task-tracker",
+          "[..] Triggering GitHub Actions...",
+          "[..] build (android-apk.yml) running",
+          "[..]   > gradle assembleRelease",
+          "[..]   > bundleRelease",
+          "[OK] BUILD SUCCESSFUL",
+          "[..] Uploading artifact..."
+        ]},
+        { "action": "If the build fails, it self-heals", "note": "When a step fails, the AI diagnosis agent reads the logs, writes a fix, and recompiles — only asking you if it's truly stuck.", "screen": "DIAGNOSIS", "lines": [
+          "ERR  Execution failed for task ':app:lint'.",
+          "[..] Diagnosis agent reading logs...",
+          "M: Found a missing resource in AndroidManifest.xml.",
+          "M: Writing fix ... applied.",
+          "[..] Recompiling...",
+          "[OK] BUILD SUCCESSFUL"
+        ]},
+        { "action": "Download the APK", "note": "The finished artifact lands in _compiled/ inside your project, ready to download to your phone.", "screen": "_compiled/", "lines": [
+          "├── task-tracker.apk   (12.4 MB)",
+          "└── build-log.txt",
+          "[OK] APK ready in _compiled/",
+          "M: Tap the APK to download it to your phone and install."
+        ]}
+      ]
+    },
+    {
+      "title": "Publish to the Marketplace",
+      "scenario": "Sell a finished project as a template. You set the listing; Morpheus creates a Stripe price; buyers pay and install in one tap.",
+      "steps": [
+        { "action": "Open the publish form", "note": "With a finished project open, tap EARN in the toolbar.", "screen": "EARN", "lines": [
+          "> Project: Task Tracker",
+          "[..] Loading publish form..."
+        ]},
+        { "action": "Add listing details", "note": "Upload an icon, write a description, and set a price (minimum $0.50 to meet Stripe checkout rules).", "screen": "PUBLISH FORM", "lines": [
+          "> Icon: uploaded (task-icon.png)",
+          "> Description: A clean task tracker with add/complete/delete.",
+          "> Price: $2.00",
+          "> Category: productivity",
+          "[..] Validating (min $0.50) ... [OK]"
+        ]},
+        { "action": "Publish", "note": "Morpheus creates a Stripe price and lists your template on the public Market.", "screen": "PUBLISH", "lines": [
+          "> [PUBLISH] tapped",
+          "[..] Creating Stripe price...",
+          "[OK] Stripe price created: price_1...",
+          "[OK] Template live on the Market"
+        ]},
+        { "action": "A buyer purchases", "note": "Buyers tap BUY, pay via Stripe, then either download a ZIP or INSTALL the template straight into their workspace.", "screen": "MARKET (buyer)", "lines": [
+          "> [BUY] tapped on \"Task Tracker\"",
+          "[..] Redirecting to Stripe checkout...",
+          "[OK] Payment received",
+          "[..] Installing into buyer's workspace...",
+          "[OK] Installed — buyer now owns the code."
+        ]}
+      ]
+    },
+    {
+      "title": "Bake a Raspberry Pi Image",
+      "scenario": "Bake your app into a bootable Raspberry Pi OS image that runs your software on first boot. Configure once, compile, then flash an SD card.",
+      "steps": [
+        { "action": "Configure the image", "note": "Set the rpi-distro target, then open Distro Config to set hostname, timezone, locale, SSH keys, and packages.", "screen": "DISTRO CONFIG", "lines": [
+          "> Hostname: taskpi",
+          "> Timezone: Australia/Sydney",
+          "> Locale: en_AU.UTF-8",
+          "> SSH key: pasted",
+          "> Packages: nodejs npm",
+          "[OK] Config saved to morpheus-distro.json"
+        ]},
+        { "action": "Compile the image", "note": "Morpheus clones pi-gen, injects your app, and builds the image. This takes roughly 20 minutes.", "screen": "COMPILE (rpi-distro)", "lines": [
+          "[..] Cloning pi-gen...",
+          "[..] Injecting app into stage2...",
+          "[..] pi-gen build running (~20 min)",
+          "[..]   > stage0 ... done",
+          "[..]   > stage2 ... done",
+          "[OK] Image built: taskpi.img.gz (1.2 GB)"
+        ]},
+        { "action": "Flash it", "note": "The build ships flash.sh and a README. Write the image to an SD card, or push it to a remote Pi over SSH with flash-network.sh.", "screen": "_compiled/", "lines": [
+          "├── taskpi.img.gz",
+          "├── flash.sh",
+          "└── OS-README.md",
+          "# FLASH (local terminal)",
+          "> ./flash.sh taskpi.img.gz /dev/sdX",
+          "[..] Writing image to SD card...",
+          "[OK] Done. Boot your Pi — the app starts on first login."
+        ]}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,262 @@
+# Build the audio-plugin-linux-arm target for real, on a runner that is an ARM64 Linux machine.
+#
+# WHY THIS EXISTS
+#
+# This route's entire claim is "the plugin this produces runs on a Raspberry Pi", and the only way to know
+# that is to compile it on an aarch64 Linux machine and read the architecture back out of the artefact. A
+# plugin built for the wrong instruction set is the quietest failure in this whole target family: the file
+# exists, the name says linux-arm, the folder is in the right place, and the host that loads it simply never
+# sees it. Nothing else in CI can catch that — the required checks prove the GUARDS, on a runner with no
+# aarch64 CPU, and the plugin itself is only built when a user compiles, in their own repo.
+#
+# This materialises what the target generates and runs the target's OWN steps, so a command changed in the
+# target changes here too. It does not re-type a single one.
+#
+# MANUAL ONLY, DELIBERATELY. Every dispatch spends Actions minutes, and this one downloads the VST3 SDK and
+# builds four third-party projects before it gets to ours. It is dispatched by hand when the target or the
+# shared plugin project changes, from the Actions tab or
+#
+#   gh workflow run audio-plugin-linux-arm-build.yml --ref main
+#
+# ⚠️ THE PLUGIN PROJECT IS SHARED WITH THE macOS AND WINDOWS ROUTES (lib/audioPluginProject.js and
+# lib/audioPluginTemplate.js), so a change to either one must be dispatched on ALL THREE —
+# `.github/workflows/audio-plugin-macos-build.yml`, `.github/workflows/audio-plugin-windows-build.yml` and
+# this one. A single green run proves one route, and the other two were built from code that no longer
+# exists. This is the one place a compile target's evidence goes stale silently.
+name: Audio plugin build (Linux ARM)
+
+on:
+  workflow_dispatch:
+    inputs:
+      # ⭐ EMPTY BY DEFAULT, AND THAT IS THE POINT: a normal run is a VERIFICATION and publishes nothing.
+      # Set it to a tag to also publish these artifacts as a durable, public download — the demo build
+      # linked from the site. Tag `plugin-demo` is the one the site points at.
+      publish_tag:
+        description: 'Publish the built plugins as a public release under this tag (leave empty to just verify)'
+        required: false
+        default: ''
+
+permissions:
+  # `read` for every step that builds and verifies; `write` is needed by the publish step below, because
+  # creating a release is a write to this repository. It is granted at the workflow level because GitHub
+  # does not allow a step to raise its own permissions — and the publish step is skipped unless a tag is
+  # given, so a verification run still only reads.
+  contents: write
+
+jobs:
+  audio-plugin:
+    name: audio-plugin (Linux ARM, all three formats)
+    # A standard GitHub-hosted ARM64 runner (aarch64), available to private repositories and billed against
+    # the plan's included minutes. NATIVE, not cross-compiled: cross-building clap-wrapper would mean
+    # cross-building the VST3 SDK and finding aarch64 X11/ALSA development packages, which is a great deal
+    # of machinery to avoid one runner label — and it would prove a toolchain nobody ships with.
+    runs-on: ubuntu-24.04-arm
+    # Configure downloads the VST3 SDK, RtAudio and RtMidi; the build then compiles all of it plus three
+    # formats of our plugin on two vCPUs. Well inside this, but a hang must not sit on a runner for an hour.
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # ⭐ THE NEURAL-ENGINE CHECKOUT IS CACHED, BECAUSE ITS `Dependencies/eigen` SUBMODULE IS ON GITLAB.
+      # Eigen is pinned by NAMCore's own tree at the engine pin (both hashes are in the key), so the tree a
+      # clone produces is a permanent, byte-identical object — re-fetching it every dispatch buys nothing and
+      # occasionally fails: GitLab intermittently answers "GitLab is currently unable to handle this request
+      # due to load", and THIS runner died on exactly that on 2026-10-07 (with Windows). The cache is restored
+      # ONCE per job, and this job runs the modelled build four times; the runner script reuses the checkout
+      # only after verifying HEAD is the pinned commit and the eigen submodule is at the commit NAMCore pins
+      # for it. Anything that does not verify is cleared and cloned as before, so a cold or stale cache cannot
+      # change what is built — it can only be slower. ⚠️ The bench below clones its OWN `bench-namcore` from
+      # the default branch and is deliberately NOT this cache: it measures whatever `main` is, so pointing it
+      # at the pin would change what it measures, and that is a separate decision from this one.
+      # ⚠️ THE KEY CARRIES BOTH PINS. The engine pin alone would serve an old eigen tree after NAMCore moved
+      # its submodule; the eigen pin alone would not move when NAMCore did. Moving either one must miss.
+      # ⚠️ AND NO `restore-keys`: a stale entry can never be reused (verification rejects a different pin), so
+      # a partial restore would only download bytes that are then deleted.
+      - name: Cache the neural engine checkout (its eigen submodule is on GitLab)
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/namcore
+          key: namcore-${{ runner.os }}-0b3d3c9-bc3b39870ecb690a623a3f49149a358b95c5781d
+
+      # Everything else — the apt packages, the wrapper clone, configure, the three builds, the ELF and
+      # AArch64 assertions and the packaging — is the target's own step list, executed by this script. See
+      # its header for why it does not re-type a single command.
+      - name: Build and verify every format the target emits (no model — the gain stage)
+        run: node scripts/audio-plugin-linux-arm-runner-build.mjs
+        env:
+          AUDIO_PLUGIN_BUILD_DIR: ${{ runner.temp }}/audio-plugin-linux-arm-build
+
+      # The models are MIT and are FETCHED rather than committed — the same ones the measurement workflow uses,
+      # and the same engine builds them. Nothing THIRD-PARTY is stored in this repository; the rig the demo
+      # publishes is the project owner's own four captures and four mics, and those DO live in the checkout at
+      # `assets/demo-rig/` (see the demo build below).
+      - name: Fetch the example models (MIT)
+        run: |
+          mkdir -p .cache/models
+          # ⚠️ THE PINNED COMMIT, NOT `main`. The engine is pinned to NAMCORE_REF in namPlugin.js, and fetching
+          # models from a moving branch means a model can arrive that the pinned engine cannot load — which is
+          # the same class of failure as the one just fixed from the other side, where our generator refused a
+          # format the engine supported. The model and the engine that plays it come from one commit.
+          base=https://raw.githubusercontent.com/sdatkinson/NeuralAmpModelerCore/0b3d3c9/example_models
+          curl -sSfL -o .cache/models/wavenet_a1_standard.nam "$base/wavenet_a1_standard.nam"
+          # NAM A2's own file: a SlimmableContainer, several submodels of one amp at different sizes. It is the
+          # format the device tier is being decided on, and until #543 our generator refused it.
+          curl -sSfL -o .cache/models/A2.nam "$base/A2.nam"
+          curl -sSfL -o .cache/models/slimmable_container.nam "$base/slimmable_container.nam"
+          curl -sSfL -o .cache/models/slimmable_wavenet.nam "$base/slimmable_wavenet.nam"
+          curl -sSfL -o .cache/models/lstm.nam "$base/lstm.nam"
+          curl -sSfL -o .cache/models/linear_1.nam \
+            https://raw.githubusercontent.com/sdatkinson/neural-amp-modeler/main/tests/resources/models/identity/linear_1.nam
+          ls -la .cache/models
+
+      # ⭐ THE PROOF THIS WORKFLOW EXISTS FOR. A project carrying a `.nam` fetches NeuralAmpModelerCore,
+      # compiles it into the plugin and embeds the model — on aarch64, which is the only place the Pi claim can
+      # be tested. It is a SECOND, separate build directory so the no-model artifact above keeps its evidence:
+      # the same target, the same runner, two different plugin shapes.
+      #
+      # `--render-check` is the part that says the plugin PLAYS the model rather than merely carrying it: the
+      # same dry signal through the plugin's own CLAP entry point and through NAMCore's `render`, built from
+      # the same checkout, compared sample by sample. The model here is the real WAVENET, not the identity —
+      # an identity model would null against the dry signal perfectly and prove nothing about the engine. And
+      # `--expect-model-effect-db -20` fails the run if the reference render is itself almost identical to the
+      # dry signal, which is what a vacuous comparison looks like.
+      - name: Build with a real NAM model, then prove the plugin plays it
+        run: |
+          node scripts/audio-plugin-linux-arm-runner-build.mjs \
+            --model .cache/models/wavenet_a1_standard.nam \
+            --render-check \
+            --expect-model-effect-db -20
+        env:
+          AUDIO_PLUGIN_BUILD_DIR: ${{ runner.temp }}/audio-plugin-linux-arm-nam-build
+
+      # ⭐ THE ARCHITECTURE TABLE, ON THE CPU THE DEVICE USES. The build above proves the plugin plays ONE
+      # model; this says what every model COSTS, which is the other half of the device decision and the half
+      # nothing had measured. It times `nam::get_dsp`'s process() directly — the same call the plugin's CLAP
+      # process() makes, same engine, same pin, same 64-frame blocks — so it is one engine compile and then a
+      # row per model, rather than a whole plugin build each. `--slim` walks a container's size dial, which is
+      # the feature that makes NAM A2 interesting on a Pi at all.
+      - name: Model throughput on a Pi-class CPU, across architectures
+        run: |
+          git clone --quiet --depth 1 https://github.com/sdatkinson/NeuralAmpModelerCore.git "$RUNNER_TEMP/bench-namcore"
+          git -C "$RUNNER_TEMP/bench-namcore" submodule update --init --depth 1
+          node scripts/audio-model-bench.mjs \
+            --namcore "$RUNNER_TEMP/bench-namcore" \
+            --models .cache/models/wavenet_a1_standard.nam,.cache/models/A2.nam,.cache/models/slimmable_container.nam,.cache/models/slimmable_wavenet.nam,.cache/models/lstm.nam \
+            --slim 0.0,1.0
+
+      # ⭐ AND THE PLUGIN ITSELF PLAYING A CONTAINER. The bench above measures the ENGINE, and the plugin is a
+      # separate claim: it embeds the .nam as bytes and hands them to nam::get_dsp, so a SlimmableContainer
+      # reaches the engine through our generator. Nothing had proved that path end to end — and the default
+      # submodel is the LARGEST, so this also fixes which end of A2's dial "no choice made" means.
+      - name: Build with NAM A2, then prove the plugin plays the container
+        run: |
+          node scripts/audio-plugin-linux-arm-runner-build.mjs \
+            --model .cache/models/A2.nam \
+            --render-check \
+            --expect-model-effect-db -20
+        env:
+          AUDIO_PLUGIN_BUILD_DIR: ${{ runner.temp }}/audio-plugin-linux-arm-a2-build
+
+      # ⭐ THE CHAIN ON A PI-CLASS CPU. The gate, the tone stack and the speaker have their own designs and were
+      # measured against them on x86-64; this renders them through the plugin's own CLAP entry point on aarch64.
+      # The impulse response HERE is SYNTHETIC and generated on the spot — this build measures the convolution
+      # against its own JS design rather than shipping a speaker. The demo's real four mics are separate, below.
+      - name: Make a synthetic cabinet (deterministic, nothing third-party)
+        run: node scripts/make-test-cab.mjs "${{ runner.temp }}/test-cab.wav"
+
+      - name: Build the amp chain, then prove the gate, the tone stack and the cabinet
+        run: |
+          node scripts/audio-plugin-linux-arm-runner-build.mjs \
+            --chain \
+            --cab "${{ runner.temp }}/test-cab.wav" \
+            --chain-check
+        env:
+          AUDIO_PLUGIN_BUILD_DIR: ${{ runner.temp }}/audio-plugin-linux-arm-chain-build
+
+      # ⭐ THE DEMO RIG, AND THIS IS THE ONE PEOPLE DOWNLOAD. The project owner's own Marshall JCM 800 2203 in
+      # four states through one G12M 4x12 in four mics, all eight files read from `assets/demo-rig/` in the
+      # checkout — so this build needs no network for its material and cannot ship a rig the manifest does not
+      # name. It has its own build directory because the model build above is the ENGINE proof (a bare model
+      # nulled against NAMCore's `render`), and a live cabinet means this plugin's output is deliberately not
+      # that bare model.
+      - name: Build the demo rig — four captures, four mics
+        run: |
+          node scripts/audio-plugin-linux-arm-runner-build.mjs --demo-rig
+        env:
+          AUDIO_PLUGIN_BUILD_DIR: ${{ runner.temp }}/audio-plugin-linux-arm-rig-build
+
+      # `if-no-files-found: error` is the second half of the check: if any of the archives is missing,
+      # the run fails here rather than passing with some of them.
+      - name: Keep the packaged plugins, so the run can be inspected rather than believed
+        uses: actions/upload-artifact@v4
+        with:
+          name: audio-plugin-linux-arm
+          path: |
+            ${{ runner.temp }}/audio-plugin-linux-arm-build/build/assets/*.zip
+            ${{ runner.temp }}/audio-plugin-linux-arm-nam-build/build/assets/*.zip
+            ${{ runner.temp }}/audio-plugin-linux-arm-rig-build/build/assets/*.zip
+            ${{ runner.temp }}/audio-plugin-linux-arm-build/BUILD-PROOF.txt
+            ${{ runner.temp }}/audio-plugin-linux-arm-nam-build/BUILD-PROOF.txt
+            ${{ runner.temp }}/audio-plugin-linux-arm-rig-build/BUILD-PROOF.txt
+            ${{ runner.temp }}/audio-plugin-linux-arm-chain-build/BUILD-PROOF.txt
+          if-no-files-found: error
+          retention-days: 7
+
+      # ⭐ AND NOW THE DOWNLOAD ITSELF. The upload above is a 7-day artifact for inspecting a run; it is
+      # not a download anyone can be pointed at. This republishes the SAME verified bytes as a release,
+      # which is durable, is a real URL, and carries its own notice and proof.
+      #
+      # It publishes the RIG build — the project owner's four captures through his own four mics. NOT the chain
+      # build above, whose impulse response is synthetic and whose whole point is to measure the gate and the
+      # tone stack against their designs rather than to be listened to.
+      #
+      # `fail_on_unmatched_files` is deliberate. A release missing one of the formats would be a download
+      # page promising a VST3 that is not in the archive, which is the exact failure the verify steps
+      # above exist to prevent — so the publish fails rather than shipping a partial set.
+      # ⚠️ THE PROOF IS RENAMED BEFORE IT IS PUBLISHED, AND THIS IS NOT COSMETIC. Every rig writes a file
+      # called BUILD-PROOF.txt and they all publish to the SAME release, so whichever platform ran last
+      # overwrote the others — the release briefly carried the Windows proof beside the Linux binaries,
+      # which is a download page whose evidence describes a different machine than the file next to it.
+      # The zips never collided because they are already named per platform; the proof was not.
+      - name: Name the proof for the machine that wrote it
+        if: inputs.publish_tag != ''
+        run: cp "${{ runner.temp }}/audio-plugin-linux-arm-rig-build/BUILD-PROOF.txt" "${{ runner.temp }}/BUILD-PROOF-linux-arm.txt"
+
+      - name: Publish the demo download
+        if: inputs.publish_tag != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.publish_tag }}
+          name: 'Morpheus audio plugin — Linux AArch64 demo'
+          body: |
+            A prebuilt Morpheus audio plugin for Linux AArch64, so you can hear what the plugin route
+            produces before compiling your own. **Read PLUGIN-DEMO-NOTICE.txt first** — it carries the
+            terms and the third-party licences.
+
+            This is the whole rig: the project owner's own Marshall JCM 800 2203 captured in four states —
+            Crunch, Crunch 2, Hi Gain (TS) and Hi Gain (RAT) — through a Marshall G12M 4x12 in four mics,
+            into a drive, a three-band tone stack, a delay and a spring reverb — nine blocks in the order a
+            pedalboard would have them. ⚠️ **All four captures and all four cabinets ship with this build.**
+            They are the project owner's own captures and are included with it; they are not third-party
+            material with a separate licence. **Switch between them with the `Capture` and `Speaker`
+            controls in the plugin's own panel, or from the host's parameter list** — they are the last two
+            parameters, `Capture` and `Speaker`. **It draws its own control panel** — the plugin owns the
+            sliders, so the standalone app has knobs rather than an empty window, and a DAW shows them
+            instead of its generic parameter list. Every control is in its own units (dB, %, ms).
+
+            ⚠️ **The standalone monitors your audio input** — with a live microphone and the speakers
+            up, an amp model in a monitoring host is a feedback loop and it will howl. Use headphones, or a
+            DAW (where the host decides monitoring). And it is a captured high-gain amp: with the gate at its
+            lowest setting it has a noise floor of its own, so raise GATE to about -40 dB to silence it
+            between notes.
+          files: |
+            ${{ runner.temp }}/audio-plugin-linux-arm-rig-build/build/assets/*.zip
+            ${{ runner.temp }}/BUILD-PROOF-linux-arm.txt
+            docs/PLUGIN-DEMO-NOTICE.txt
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,762 @@
+// The amp chain: what a plugin's parameters ARE, and the C++ that puts them in the signal path.
+//
+// WHY THIS IS A MODULE RATHER THAN TEXT INSIDE THE TEMPLATE. `audioPluginTemplate.js` holds the plugin's
+// source, and the chain is the one part of it that is a TABLE — parameters with ids, names, ranges and
+// roles — and tables are what drift: a parameter that exists in the host's list and not in the process loop,
+// or a tone band whose corner frequency is right in the measurement and wrong in the build. Both the C++ and
+// `scripts/audio-amp-chain-check.mjs` read this one table.
+//
+// ── THE PLAIN PLUGIN IS NOT A DEGRADED AMP, IT IS A DIFFERENT PLUGIN ─────────────────────────────────────
+// Every project that existed before this module still generates the single-`Gain` plugin, byte for byte, and
+// that is the point: the test bench's self-test patch, the three runner proofs and the measured +5.92 dB all
+// describe that plugin, and a chain that turned itself on would silently invalidate every one of them. A
+// project opts in through `morpheus.plugin.json`.
+import { TONE_BANDS, TONE_KEYS } from './audio/toneStack.js';
+import { rigDefaultIndex } from './rig.js';
+
+/**
+ * The gate's threshold at its lowest setting, in dB — and at that value the gate is BYPASSED rather than
+ * merely permissive. See the parameter's own note.
+ */
+export const GATE_OFF_DB = -80;
+
+/**
+ * A CHAIN IS DATA — an ordered list of STAGES, each with a stable `id`.
+ *
+ * ⚠️ THE `id` IS NOT DECORATION AND IT IS NOT THE POSITION. Every stage carries one so that identity survives
+ * a reorder, which is the single decision that is painful to retrofit: anything keyed by position (a saved
+ * parameter value, a MIDI binding, an automation lane in a host) silently follows the wrong block the moment
+ * a user drags one past another. The pedalboard work reads `instanceId` out of PiPedal's model for exactly
+ * this reason, and it is cheaper to have it here before there is anything to break.
+ *
+ * `kind` is what a stage DOES; `role` is which parameter drives it. The emitters ask two questions of this
+ * list — is there a stage of this kind, and where is the model — instead of branching on a chain's name.
+ */
+// ⚠️ A STAGE THAT IS SWITCHED OFF IS STILL IN THE CHAIN, and this is the one place that decides it. Every
+// emitter asks `chainHas` before writing a block's DSP, so a block that STARTS switched off still emits its
+// biquads, its state and its body — wrapped in the crossfade its own `on_<key>` control drives (see
+// `blendCpp`). That is what changed when on/off stopped being a BUILD decision: a block's code can no longer
+// be absent, because it has to be there the moment somebody switches it on, and a plugin cannot be recompiled
+// from inside a DAW.
+//
+// `stage.bypass` survives as the block's DEFAULT — the position of its switch at load — which is why a board
+// that was saved with a block switched off still builds a plugin that opens with it off. See `chainParams`.
+export const chainHas = (chain, kind) => (chain.stages || []).some((s) => s.kind === kind);
+
+/**
+ * WHERE THE MODEL SITS, so the pre-model/post-model split is DERIVED rather than assumed.
+ *
+ * The split exists because the model runs a whole block at once — `process()` once per chunk instead of once
+ * per sample, which was 2.6x of this plugin's entire real-time budget. That optimisation is an AMP's shape: a
+ * chain with no model has no middle, and a chain that is only a delay has nothing either side of it. Asking
+ * the list where the model is means the next chain does not have to be an amp to be expressed.
+ */
+export const modelStageIndex = (chain) => (chain.stages || []).findIndex((s) => s.kind === 'model');
+
+/**
+ * WHETHER A STAGE'S SWITCH EXISTS AT ALL, and the one stage whose does not.
+ *
+ * The OUTPUT LEVEL is applied on the plugin's OUTPUT — after both channels, outside every stage loop — so
+ * there is nothing to blend it with, and "switched off" could only mean unity gain, which is a different
+ * plugin with a level control that silently stopped being one. `board.js` has refused to bypass the Output
+ * block since the board existed; this is the same rule at the level that emits the code.
+ */
+export const canBlend = (stage) => stage.kind !== 'level';
+
+/**
+ * THE SWITCH'S KEY AND THE BLOCK'S LABEL — `on_<key>`, spelled identically for a board stage and for the amp
+ * chain's own stage of the same kind.
+ *
+ * ⚠️ IT IS DERIVED FROM THE STAGE, NEVER FROM A BLOCK CATALOGUE. `board.js`'s labels are UI copy and are free
+ * to change; this name reaches a HOST's parameter list and a saved automation lane, and
+ * `verify-audio-plugin.mjs` asserts that the default board and the legacy `chain: 'amp'` project generate the
+ * same text byte for byte — so the two paths must agree, and the only thing they share is the stage.
+ *
+ * `gain`/`level` are the amp chain's spellings of a block the board calls `input`/`output`, so they map back
+ * to the names a user sees; everything else already carries its block kind.
+ */
+const KIND_NAME = { gain: 'input', level: 'output' };
+export const stageOnKey = (stage) => `on_${stage.param?.key || KIND_NAME[stage.kind] || stage.kind}`;
+
+/** Whether a parameter key is a block's switch. The switches follow every control in the identity order. */
+export const isOnKey = (key) => String(key).startsWith('on_');
+
+/** What a block is CALLED — the stage's own control name when it has one, else the name of its kind. */
+const STAGE_LABEL = {
+  gain: 'Input', level: 'Output', gate: 'Gate', tone: 'Tone',
+  model: 'Amp model', cab: 'Cabinet', delay: 'Delay', spring: 'Spring reverb', drive: 'Drive',
+};
+export const stageLabel = (stage) => stage.param?.name || STAGE_LABEL[stage.kind] || stage.kind;
+
+/** The single-parameter plugin every project got before the chain existed. */
+export const PLAIN_CHAIN = {
+  name: 'plain',
+  stages: [
+    // `name: null` — the plain plugin's one control is called `Gain` by default, and is renamed from the
+    // manifest. The amp's output stage names itself, which is the only difference between the two.
+    { id: 'output', kind: 'level', role: 'output', param: { key: 'output', name: null, min: -60, max: 12, def: 0, role: 'output', unit: 'dB' } },
+  ],
+};
+
+/**
+ * The amp chain: input trim, a noise gate, a three-band tone stack, the model (when there is one), the
+ * cabinet (when there is one), output level.
+ *
+ * ORDER MATTERS AND IT IS THE MUSICAL ONE. Input trim first because it is what drives everything after it; the
+ * GATE next, before anything that amplifies, because a gate after the tone stack or the model is gating the
+ * noise they added; the tone stack on the way in; the model in the middle because everything else exists to
+ * feed it and to tame what comes out; the cabinet after the model because a speaker is part of the amp; output
+ * last so the level control cannot change how the model distorts — the difference between a level control and
+ * a drive control, and the reason a player expects turning the output down to sound identical, only quieter.
+ */
+export const AMP_CHAIN = {
+  name: 'amp',
+  // IN SIGNAL ORDER, which is the only order this list may be in: the loop walks it. The musical reasoning
+  // for that order is above and is unchanged by the shape.
+  stages: [
+    { id: 'input', kind: 'gain', role: 'input',
+      param: { key: 'input', name: 'Input', min: -24, max: 24, def: 0, role: 'input', unit: 'dB' } },
+    // ⚠️ THE BOTTOM OF THE RANGE IS OFF, NOT A VERY LOW THRESHOLD, and the difference is measurable: at -80 dB
+    // the gate is still an envelope follower on the signal and never exactly transparent, while OFF is a null
+    // against the chain without a gate at all. That is the state the proof asserts, so it has to be a state.
+    { id: 'gate', kind: 'gate', role: 'gate',
+      param: { key: 'gate', name: 'Gate', min: GATE_OFF_DB, max: 0, def: GATE_OFF_DB, role: 'gate', unit: 'dB' } },
+    // The three bands are ONE stage with three parameters: they are one design — a tone stack — and pulling
+    // them apart into three stages would let a reorder separate a mid from its bass, which is not a thing a
+    // tone stack can be.
+    { id: 'tone', kind: 'tone', bands: TONE_BANDS },
+    { id: 'model', kind: 'model' },
+    { id: 'cab', kind: 'cab' },
+    { id: 'output', kind: 'level', role: 'output',
+      param: { key: 'output', name: 'Output', min: -60, max: 12, def: 0, role: 'output', unit: 'dB' } },
+  ],
+};
+
+/**
+ * Which chain this project asked for.
+ *
+ * `morpheus.plugin.json`'s `chain` field names it. An unknown value is NOT an error and does not silently
+ * become the amp: a project that asked for something this version does not have gets the plugin it would have
+ * got before the field existed, and `readManifest` reports the value so the scaffold can warn about it.
+ */
+export function chainFor(manifest = {}) {
+  const asked = String(manifest.chain || '').trim().toLowerCase();
+  if (asked === 'amp') return AMP_CHAIN;
+  return PLAIN_CHAIN;
+}
+
+/**
+ * The parameter list, DERIVED from the stages — read in the stages' order, which is the order the emitted
+ * `IDX_*` constants and the host's automation lanes are in.
+ *
+ * KEYED `output` IN BOTH CHAINS, deliberately and unchanged: the emitted C++ indexes the parameters by key,
+ * and the final multiply is written on `IDX_OUTPUT` either way — so the test bench's patch, which proves its
+ * own checks can fail by breaking that one line, has a single shape to match.
+ */
+export function chainParams(chain, manifest = {}) {
+  const out = [];
+  // The blocks' own switches, collected as the stages are walked and APPENDED after every control — see the
+  // note on the return for why the position matters.
+  const switches = [];
+  for (const stage of chain.stages || []) {
+    // THE BLOCK A CONTROL BELONGS TO, so a host can group them — and CLAP has a field for exactly this that
+    // has been emitted empty until now. The plugin's own panel groups its rows by it too.
+    const module = stageLabel(stage);
+    // A SWITCHED-OFF BLOCK'S CONTROLS STAY, and they no longer say so in their own names. `"Gate (bypassed)"`
+    // was the same fact told twice, in a string a host reads out as PART OF THE PARAMETER'S NAME — and it is
+    // no longer even true, because the block is reachable from inside the host now. The switch says it.
+    // `def` is read from the stage when the board saved one — a board's value is the plugin's default, and it
+    // has to survive into the generated `kParams` table.
+    // ⭐ A STAGE MAY CARRY ITS OWN LIST. An amp chain stage borrows one of two shapes — `param` for one
+    // control, `bands` for a tone stack whose three controls are one design — and a block that is not part of
+    // an amplifier has no reason to fit either. `stage.params` is that case: the block's own table.
+    if (stage.params) {
+      out.push(...stage.params.map((x) => ({ ...x, module })));
+    } else if (stage.bands) {
+      out.push(...stage.bands.map((b) => ({
+        key: b.key,
+        name: b.label,
+        min: -b.rangeDb,
+        max: b.rangeDb,
+        def: Number.isFinite(b.def) ? b.def : 0,
+        role: 'tone',
+        unit: 'dB',
+        module,
+      })));
+    } else if (stage.param) {
+      out.push({ ...stage.param, name: stage.param.name ?? String(manifest.paramName || 'Gain'), module });
+    }
+    // ⭐ THE BLOCK'S OWN SWITCH. One DISCRETE 0/1 control whose default is the build-time state, so a plugin
+    // built from a board with a block switched off opens with that block off — and a host can turn it on,
+    // which is the whole point: a build decision nobody can reach from inside a DAW is not a control.
+    if (canBlend(stage)) {
+      switches.push({
+        key: stageOnKey(stage),
+        name: `${module} On`,
+        min: 0,
+        max: 1,
+        def: stage.bypass ? 0 : 1,
+        role: 'on',
+        unit: '',
+        module,
+        stepped: true,
+      });
+    }
+  }
+  // ⚠️ THE SWITCHES ARE APPENDED TO THE WHOLE LIST, NOT INSERTED BESIDE THEIR BLOCKS, and the reason is a
+  // host's saved state: `paramsCpp` turns a parameter's POSITION into its `PARAM_*` id, so a switch placed
+  // beside its block would renumber every control after it and re-point an automation lane at a different
+  // knob. Appending means every project that already exists keeps every id it had. `chainParamsStable` and
+  // `boardParamsStable` sort with the switches last for the same reason, and the panel — which is free to
+  // reorder for display, since it addresses parameters by id — groups each switch back with its own block.
+  return out.concat(switches);
+}
+
+/**
+ * ⚠️ THE ORDER A PARAMETER IS IDENTIFIED IN, WHICH IS NOT THE ORDER IT IS PROCESSED IN.
+ *
+ * `paramsCpp` turns the parameter list into `PARAM_<KEY> = <index + 1>` and `IDX_<KEY> = <index>`, and **a
+ * host stores automation against those ids**. A list that follows the stage order therefore means that
+ * dragging a block in a pedalboard RE-NUMBERS the controls: a lane automated on `Gate` (id 2) would, after a
+ * rebuild, find that id 2 is something else. Nothing fails to build and nothing throws — it is the same
+ * corruption the stage `id` exists to prevent, one level down, which is why it is fixed before there is a UI
+ * that can reorder anything.
+ *
+ * So the two orderings are separate, and they must never be the same list:
+ *   - the STAGES decide what is wired where, and a user may move them;
+ *   - this decides what a control IS, and a user may not.
+ *
+ * The order below is the amp chain's existing one, deliberately: this changes which arrangements are
+ * POSSIBLE without changing the plugin that already exists.
+ */
+export const PARAM_ORDER = [
+  'input', 'gate', 'bass', 'mid', 'treble', 'output',
+  // ⚠️ THE BLOCKS' SWITCHES ARE APPENDED, AND THIS IS THE LINE THAT COMMENT IS ABOUT. They arrived after
+  // every control that already existed, on purpose: `paramsCpp` derives a parameter's id from its position
+  // here, and a host stores automation against that id — so inserting a switch beside its block would move
+  // every control after it. A board is not ranked by this list (its order is creation order, see
+  // `board.js`'s `boardParamsStable`) but it sorts its switches last for exactly this reason.
+  'on_input', 'on_gate', 'on_tone', 'on_model', 'on_cab',
+  // ⭐ AND THE RIG'S TWO SELECTORS COME AFTER EVEN THE SWITCHES, for exactly the reason above. They exist
+  // only for a rig that offers a choice — `rigSelectors` below emits one only for two or more usable members
+  // — so a one-capture project has no parameter here at all. This list is the ORDER, not the contents; the
+  // scaffold appends the selectors it built to the end of the parameter list (`audioPluginProject.js`), which
+  // is what fixes their ids. Putting them here as well is what stops a future rearrangement from sorting
+  // them somewhere a host's lane would have to move for.
+  'model_select', 'cab_select',
+];
+
+/** The parameters in their STABLE identity order — see PARAM_ORDER. A stage reorder cannot move a control. */
+export function chainParamsStable(chain, manifest = {}) {
+  const rank = (k) => { const at = PARAM_ORDER.indexOf(k); return at < 0 ? PARAM_ORDER.length : at; };
+  return chainParams(chain, manifest).slice().sort((a, b) => rank(a.key) - rank(b.key));
+}
+
+/**
+ * THE RIG'S TWO SELECTORS — one DISCRETE control per half of the rig, and only when there is a choice.
+ *
+ * ⭐ THEY ARE PARAMETERS RATHER THAN A MODE, because a host's automation lane is the only place a player can
+ * switch capture or mic without reaching for the mouse. `stepped` is CLAP's own discreteness flag (see
+ * `paramsCpp`), so a DAW draws a list rather than a slider that happens to land on whole numbers, and
+ * `module` puts the control under the block it selects — the same two fields a block switch carries, which
+ * is why the panel already knows how to draw one (see `pluginGui.js`'s row layout).
+ *
+ * ⚠️ THE COUNT IS THE USABLE MEMBERS, NOT THE FILES. `resolveModels` keeps a capture it cannot use so its
+ * warning reaches the scaffold (see namPlugin.js), and `modelDataSourceAll` then drops it from the emitted
+ * rig — so the table, and therefore the selector's range, describes exactly the rows that exist. A corrupt
+ * `.nam` must not leave a selector position that loads nothing.
+ *
+ * ⚠️ FEWER THAN TWO OFFERS NOTHING AT ALL. One choice is not a control, and emitting one would put a
+ * parameter into every one-capture project — which is precisely the byte-identity this whole change exists
+ * to protect.
+ *
+ * ⭐ THE DEFAULT IS THE MEMBER THE PROJECT MARKED, NOT THE FIRST ONE. `models`/`cabs` are the EMITTED
+ * member lists — the same arrays the tables are built from, so a member the emitter dropped cannot be chosen
+ * — and `rigDefaultIndex` reads the one marked `default: true`. With none marked the index is `0`, which is
+ * the FIRST emitted member and therefore the sound a project with no selector already plays: a session saved
+ * before this field existed opens on exactly the same sound. That is the whole point of the flag — it lets a
+ * project say which member it opens on WITHOUT reordering the list, which is what "the demo's first entry is
+ * its opening sound" used to have to mean.
+ *
+ * `name` is the CONTROL's label, which is deliberately not the module's: the panel shows the module as a
+ * section heading, so a row reading "Amp model" under "Amp model" would say the same word twice.
+ */
+export function rigSelectors({ models = [], cabs = [] } = {}) {
+  const m = Array.isArray(models) ? models : [];
+  const c = Array.isArray(cabs) ? cabs : [];
+  const out = [];
+  if (m.length >= 2) {
+    out.push({ key: 'model_select', name: 'Capture', min: 0, max: m.length - 1, def: rigDefaultIndex(m), role: 'select', kind: 'model', unit: '', module: 'Amp model', stepped: true });
+  }
+  if (c.length >= 2) {
+    out.push({ key: 'cab_select', name: 'Speaker', min: 0, max: c.length - 1, def: rigDefaultIndex(c), role: 'select', kind: 'cab', unit: '', module: 'Cabinet', stepped: true });
+  }
+  return out;
+}
+
+const cstr = (s) => `"${String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+const num = (v) => {
+  const s = String(Number(v));
+  return s.includes('.') || s.includes('e') ? s : `${s}.0`;
+};
+
+// ── the noise gate ──────────────────────────────────────────────────────────────────────────────────────
+// WHY A GATE IS THE FIRST THING AFTER THE TRIM, and not later: a gate placed after the tone stack or the model
+// is gating the noise THEY added rather than the noise that came in, and it cannot un-add what they did. This
+// one sees what the player's instrument and cable actually sent.
+//
+// THE OTHER THREE NUMBERS ARE FIXED, and that is a decision rather than an omission: a 1 ms attack, a 120 ms
+// release and 6 dB of hysteresis are not musical choices at this stage, and a gate with four controls is a
+// gate nobody sets. The threshold is the one a player reaches for.
+
+/** The gate's DSP, emitted when the chain has a gate. */
+export const gateDspCpp = `// ── the noise gate ───────────────────────────────────────────────────────────────────────────────────
+// An envelope follower and a switch with hysteresis. See lib/ampChain.js for why the time constants are not
+// parameters.
+typedef struct { double env; double gain; int open; } gate_t;
+
+#define MORPHEUS_GATE_ATTACK_MS 1.0
+#define MORPHEUS_GATE_RELEASE_MS 120.0
+// HALF THE THRESHOLD IS -6 dB: a signal sitting exactly at the threshold would otherwise open and close the
+// gate on alternate samples, which is audible as a buzz rather than as a gate.
+#define MORPHEUS_GATE_HYSTERESIS 0.5
+
+static double gate_process(gate_t *g, double x, double threshold_db, double fs) {
+   const double rectified = fabs(x);
+   const double atk = exp(-1.0 / (MORPHEUS_GATE_ATTACK_MS * 0.001 * fs));
+   const double rel = exp(-1.0 / (MORPHEUS_GATE_RELEASE_MS * 0.001 * fs));
+   g->env = rectified > g->env ? atk * g->env + (1.0 - atk) * rectified
+                               : rel * g->env + (1.0 - rel) * rectified;
+   const double thr = pow(10.0, threshold_db / 20.0);
+   if (g->env > thr) g->open = 1;
+   else if (g->env < thr * MORPHEUS_GATE_HYSTERESIS) g->open = 0;
+   // The gain moves on the SAME two time constants, so the gate opens fast and closes gently. A gate's click
+   // is the gain moving in one sample, which is the entire reason these constants exist.
+   const double c = g->open ? atk : rel;
+   g->gain += ((g->open ? 1.0 : 0.0) - g->gain) * (1.0 - c);
+   return x * g->gain;
+}`;
+
+/** The gate's per-instance state. Per channel, like everything else that holds a signal's history. */
+export const gateStateCpp = `   gate_t gate[2];`;
+
+/** Start the gate open, so a plugin that is never told a threshold does not fade in. */
+export const gateInitCpp = `   for (int c = 0; c < 2; ++c) { p->gate[c].env = 0.0; p->gate[c].gain = 1.0; p->gate[c].open = 1; }`;
+
+/** The stage, per channel. */
+export const gateStageCpp = `         // ⚠️ THE BOTTOM OF THE RANGE IS OFF, and bypassed rather than merely permissive: at -80 dB the
+         // gate is still an envelope follower and never exactly transparent, while OFF nulls against the
+         // chain without a gate — which is the state the measurement asserts.
+         if (p->smoothed[IDX_GATE] > (double)MORPHEUS_GATE_OFF_DB + 0.001) {
+            x = gate_process(&p->gate[c], x, p->smoothed[IDX_GATE], p->fs);
+         }`;
+
+/** The parameter array index of a role, or -1. Used by the emitted C++ and by the measurement. */
+export const paramIndex = (params, key) => params.findIndex((p) => p.key === key);
+
+// ── the emitted C++ ──────────────────────────────────────────────────────────────────────────────────────
+// Every fragment below is C++ text for the generated plugin. They are functions rather than constants
+// because each one is shaped by the parameter table.
+
+/** The id enum and the table the params extension reads. */
+export function paramsCpp(params) {
+  const enums = params.map((p, i) => `PARAM_${p.key.toUpperCase()} = ${i + 1}`).join(', ');
+  // THE UNIT TRAVELS WITH THE CONTROL. It is what the HOST shows when it draws the parameter, and what the
+  // plugin's own panel shows — one string, so a delay can read "340.00 ms" and a mix "25.00 %" instead of
+  // every control in every plugin claiming to be decibels. A parameter that declares none is unitless.
+  // ⭐ AND SO DO THE TWO THINGS A HOST NEEDS TO DRAW A CONTROL RATHER THAN A NUMBER: `stepped` is CLAP's own
+  // "this parameter is discrete" flag — a 0/1 switch is not a slider that happens to land on whole numbers —
+  // and `module` is the BLOCK the control belongs to, which is how a host groups an amplifier's rows.
+  const rows = params
+    .map((p, i) => `   { ${i + 1}, ${cstr(p.name)}, ${num(p.min)}, ${num(p.max)}, ${num(p.def)}, ${cstr(p.unit || '')}, ${p.stepped ? 1 : 0}, ${cstr(p.module || '')} },`)
+    .join('\n');
+  return `// The id must not be 0: CLAP_INVALID_ID means "no parameter", so a host treats an event carrying id 0 as
+// malformed. These come from server/src/lib/ampChain.js — one table, used here and by the measurement.
+enum { ${enums} };
+#define MORPHEUS_NUM_PARAMS ${params.length}
+
+// The array index of each parameter, named, so the process loop cannot index the wrong one.
+${params.map((p, i) => `#define IDX_${p.key.toUpperCase()} ${i}`).join('\n')}
+
+static const struct { clap_id id; const char *name; double min; double max; double def; const char *unit; int stepped; const char *module; } kParams[] = {
+${rows}
+};`;
+}
+
+/**
+ * THE BLOCK LIST the panel groups its rows by, in SIGNAL ORDER.
+ *
+ * ⚠️ THE NAMES MUST BE THE ONES `chainParams` PUT ON THE CONTROLS' `module`, because that is the only thing
+ * the panel has to match a row to a block — so both come from `stageLabel` and neither is written out twice.
+ *
+ * ⚠️ AND THE PANEL CANNOT DERIVE THIS FROM THE PARAMETER LIST. Grouping rows by where a block first appears
+ * there puts a block WITH NO CONTROLS OF ITS OWN at the bottom, because its only parameter is its switch and
+ * the switches are appended (deliberately, so a host's automation ids do not move). The amp model and the
+ * cabinet — the two blocks in the middle of the signal path — therefore drew BELOW the delay and the spring
+ * reverb, which is not the order anything runs in. Found by photographing the panel with
+ * tools/clap-gui-host, which is the only thing that could have found it.
+ */
+export function blocksCpp(chain) {
+  const names = (chain.stages || []).map(stageLabel);
+  return `#define MORPHEUS_NUM_BLOCKS ${names.length}
+static const char *const kMorpheusBlocks[] = {
+${names.map((n) => `   ${cstr(n)},`).join('\n')}
+};`;
+}
+
+/**
+ * The per-instance state: one value and one smoothed value per parameter, plus the filter state.
+ *
+ * `_params` IS DELIBERATELY UNUSED: what needs state is decided by the CHAIN, not by the parameter list, so
+ * that a block's state follows the block rather than a control that happens to exist. The argument stays for
+ * the caller's sake and is named with the underscore the lint rule asks for.
+ */
+export function stateCpp(chain, _params) {
+  const lines = [
+    '   // One pair per parameter, indexed by IDX_*, and stepped one sample at a time. Keeping the host value',
+    '   // and the applied value apart is what stops a parameter jump from clicking.',
+    `   double value[MORPHEUS_NUM_PARAMS];`,
+    `   double smoothed[MORPHEUS_NUM_PARAMS];`,
+    '   double fs;',
+  ];
+  if (chainHas(chain, 'tone')) {
+    lines.push(
+      '',
+      '   // One filter per band per channel: a stereo plugin needs its state twice or the two channels bleed',
+      '   // into each other, which is audible as a widening image rather than as an error.',
+      `   biquad_t tone[2][${TONE_KEYS.length}];`,
+      `   double tone_last[${TONE_KEYS.length}];`,
+    );
+  }
+  // Keyed on the CHAIN rather than on the parameter: the block's state follows the BLOCK, so a gate that
+  // starts switched off still has its envelope follower — it needs one the moment its switch closes, and it
+  // may not allocate or re-arm on the audio thread when that happens.
+  if (chainHas(chain, 'gate')) lines.push(gateStateCpp);
+  return lines.join('\n');
+}
+
+/** Set every parameter to its default, in init(). */
+export function initCpp(params) {
+  return params
+    .map((p, i) => `   p->value[${i}] = ${num(p.def)}; p->smoothed[${i}] = ${num(p.def)};`)
+    .join('\n');
+}
+
+/** Which index an incoming event addresses, by id. */
+export function eventCpp() {
+  return [
+    '   if (hdr->space_id != CLAP_CORE_EVENT_SPACE_ID || hdr->type != CLAP_EVENT_PARAM_VALUE) return;',
+    '   const clap_event_param_value_t *ev = (const clap_event_param_value_t *)hdr;',
+    '   int ix = -1;',
+    '   for (uint32_t i = 0; i < MORPHEUS_NUM_PARAMS; ++i) if (kParams[i].id == ev->param_id) { ix = (int)i; break; }',
+    '   if (ix < 0) return;',
+    '   const double v = ev->value;',
+    '   p->value[ix] = v < kParams[ix].min ? kParams[ix].min : (v > kParams[ix].max ? kParams[ix].max : v);',
+  ].join('\n');
+}
+
+/**
+ * The biquad and the tone stack, when this chain has one.
+ *
+ * DIRECT FORM 1, AND THE SAME STATEMENT ORDER AS `lib/audio/dsp.js`'s `biquadProcess` — deliberately. The
+ * measurement compares the plugin's response against that implementation's, and two forms of the same filter
+ * differ in the last bits: matching the form makes any difference the measurement finds a real one rather
+ * than arithmetic bookkeeping.
+ */
+export function toneCpp() {
+  return `// ── the tone stack ───────────────────────────────────────────────────────────────────────────────────
+// Three biquads whose corner frequencies and Q values are generated from server/src/lib/audio/toneStack.js,
+// so the design the measurement is checked against and the filters that run are the same numbers.
+typedef struct { double b0, b1, b2, a1, a2; double x1, x2, y1, y2; } biquad_t;
+
+static double biquad_process(biquad_t *q, double x0) {
+   const double out = q->b0 * x0 + q->b1 * q->x1 + q->b2 * q->x2 - q->a1 * q->y1 - q->a2 * q->y2;
+   q->x2 = q->x1; q->x1 = x0; q->y2 = q->y1; q->y1 = out;
+   return out;
+}
+
+enum { TONE_LOWSHELF = 0, TONE_PEAK = 1, TONE_HIGHSHELF = 2 };
+
+// WHEN THE COEFFICIENTS ARE RECOMPUTED. Recomputing them every sample costs six sin/cos/pow calls on the
+// audio thread for nothing once a control has settled; recomputing them only when the value has moved by a
+// LOT leaves the filter slightly wrong forever, and that error is visible in a null test against the design
+// (0.001 dB of coefficient error measured as -55 dB of residual, which is how this number was chosen).
+// A millionth of a dB is far below audibility and far above double-precision noise, and once a parameter
+// stops moving the comparison is false and no work happens at all.
+#define MORPHEUS_TONE_EPS 0.000001
+
+// The RBJ cookbook, which is what lib/audio/dsp.js implements too. Every branch is normalised by a0 so the
+// difference equation above needs no division per sample.
+static void biquad_set(biquad_t *q, int type, double freq, double qq, double gain_db, double fs) {
+   const double w0 = 2.0 * 3.14159265358979323846 * freq / fs;
+   const double cw = cos(w0);
+   const double sw = sin(w0);
+   const double alpha = sw / (2.0 * qq);
+   const double A = pow(10.0, gain_db / 40.0);
+   double b0, b1, b2, a0, a1, a2;
+   if (type == TONE_LOWSHELF) {
+      const double s = 2.0 * sqrt(A) * alpha;
+      b0 = A * ((A + 1.0) - (A - 1.0) * cw + s);
+      b1 = 2.0 * A * ((A - 1.0) - (A + 1.0) * cw);
+      b2 = A * ((A + 1.0) - (A - 1.0) * cw - s);
+      a0 = (A + 1.0) + (A - 1.0) * cw + s;
+      a1 = -2.0 * ((A - 1.0) + (A + 1.0) * cw);
+      a2 = (A + 1.0) + (A - 1.0) * cw - s;
+   } else if (type == TONE_PEAK) {
+      b0 = 1.0 + alpha * A; b1 = -2.0 * cw; b2 = 1.0 - alpha * A;
+      a0 = 1.0 + alpha / A; a1 = -2.0 * cw; a2 = 1.0 - alpha / A;
+   } else {
+      const double s = 2.0 * sqrt(A) * alpha;
+      b0 = A * ((A + 1.0) + (A - 1.0) * cw + s);
+      b1 = -2.0 * A * ((A - 1.0) + (A + 1.0) * cw);
+      b2 = A * ((A + 1.0) + (A - 1.0) * cw - s);
+      a0 = (A + 1.0) - (A - 1.0) * cw + s;
+      a1 = 2.0 * ((A - 1.0) - (A + 1.0) * cw);
+      a2 = (A + 1.0) - (A - 1.0) * cw - s;
+   }
+   q->b0 = b0 / a0; q->b1 = b1 / a0; q->b2 = b2 / a0; q->a1 = a1 / a0; q->a2 = a2 / a0;
+}`;
+}
+
+/** Recompute the coefficients when a band's smoothed gain has moved, and process one band per channel. */
+export function toneUpdateCpp() {
+  return TONE_BANDS.map((b, i) => [
+    `   if (fabs(p->smoothed[IDX_${b.key.toUpperCase()}] - p->tone_last[${i}]) > MORPHEUS_TONE_EPS) {`,
+    `      p->tone_last[${i}] = p->smoothed[IDX_${b.key.toUpperCase()}];`,
+    `      for (int c = 0; c < 2; ++c) biquad_set(&p->tone[c][${i}], ${toneTypeConst(b.type)}, ${num(b.freq)}, ${num(b.q)}, p->tone_last[${i}], p->fs);`,
+    '   }',
+  ].join('\n')).join('\n');
+}
+
+const toneTypeConst = (type) => ({ lowshelf: 'TONE_LOWSHELF', peak: 'TONE_PEAK', highshelf: 'TONE_HIGHSHELF' }[type]);
+
+/**
+ * The chain, per sample, for one channel. `x` is the sample; the result replaces it.
+ *
+ * ⚠️ THE OUTPUT LEVEL IS NOT HERE, and it was, which applied it twice: this emitted the output-role multiply
+ * inside the channel loop and the process loop's final line applied the output level again, so a +6 dB
+ * setting measured +11.85 dB. The test bench caught it on the first local run — "setting Gain changes the
+ * level by the amount it says — measured 11.85 dB, expected 6.00 dB" — which is what that check is for.
+ * The output level stays on the final line, after both channels, because it is a level on the plugin's
+ * output rather than a stage inside one channel's path.
+ */
+/**
+ * ONE STAGE'S DSP, in the shape the process loop needs — the shared half of the two passes.
+ *
+ * ⚠️ IT USED TO BE WRITTEN OUT IN THE PRE-MODEL PASS ONLY, and the post pass knew how to emit exactly one
+ * thing: the cabinet. That was fine while the amp chain was the only arrangement there was, and it became a
+ * SILENT LOSS the moment a user could order the blocks: a Tone stack placed after the model emitted nothing
+ * at all — it simply vanished from the plugin, with a control in the host that did nothing and no warning.
+ * Both passes now emit from this one function, so a block's DSP follows the block.
+ *
+ * `x` is the sample; the result replaces it. The `level` kind is deliberately absent: the output level is a
+ * level on the plugin's OUTPUT, applied after both channels, which is why it is the last line of the process
+ * loop rather than a stage in one channel's path.
+ */
+export function stageDspCpp(stage, params) {
+  // ⭐ A STAGE MAY BRING ITS OWN DSP, and this is the whole extension point for a block that is not part of
+  // an amp. `stage.dsp` is a marker the emitter cannot be expected to understand — `__DELAY_STAGE__` — and the
+  // template replaces it with text supplied by whoever built the chain. That is why `ampChain.js` still has
+  // never heard of a delay: a block that needs state across samples, its own allocation and its own struct in
+  // `plugin_t` cannot be described by a switch statement in here, and a switch statement in here would make
+  // every future block a change to the amp chain.
+  if (stage.dsp) return [stage.dsp];
+  if (stage.kind === 'gain') {
+    const p = params.find((x) => x.role === 'input');
+    return p ? [`         x *= db_to_linear(p->smoothed[IDX_${p.key.toUpperCase()}]);`] : [];
+  }
+  if (stage.kind === 'gate') {
+    // The gate runs on the channel's sample before anything that amplifies it, when it is placed there.
+    return ['__GATE_STAGE__'];
+  }
+  if (stage.kind === 'tone') {
+    return TONE_BANDS.map((b) => `         x = biquad_process(&p->tone[c][${TONE_KEYS.indexOf(b.key)}], x);`);
+  }
+  if (stage.kind === 'cab') return ['__CAB_STAGE__'];
+  return [];
+}
+
+/**
+ * ONE STAGE'S DSP, WRAPPED IN ITS OWN SWITCH — the shape both passes emit.
+ *
+ * ⚠️ THE CROSSFADE IS WHY A SWITCHED-OFF BLOCK STILL EMITS ITS CODE. `on == 1` skips the blend line
+ * entirely, so a block that is on is BIT-IDENTICAL to the plugin that had no switch at all — which is what
+ * keeps every measured null (the tone rows in `audio-amp-chain-check`, the runner render checks) exactly
+ * where it was. `on == 0` is `dry + 0 * (x - dry) == dry`, exactly, so a switched-off block is a true bypass
+ * rather than a quiet one. In between it is the same one-pole the other parameters ramp with (~21 ms), which
+ * is what stops a switch from clicking — a hard `if (on)` would not.
+ *
+ * `dry` is taken BEFORE the block's DSP and scoped to its own braces, so two blocks in one channel's path
+ * cannot collide on the name, and `on` is read from the smoothed value the audio thread already owns.
+ */
+export function blendCpp(stage, params) {
+  const lines = stageDspCpp(stage, params);
+  if (!lines.length) return [];
+  const key = stageOnKey(stage);
+  const idx = `IDX_${key.toUpperCase()}`;
+  return [
+    '         {',
+    `            const double dry_${key} = x;`,
+    ...lines,
+    `            const double on_${key} = p->smoothed[${idx}];`,
+    `            if (on_${key} < 1.0) x = dry_${key} + on_${key} * (x - dry_${key});`,
+    '         }',
+  ];
+}
+
+export const stageId = (stage) =>
+  `MORPHEUS_STAGE_${String(stage.id || stage.kind).replace(/[^A-Za-z0-9]/g, '_').toUpperCase()}`;
+
+/**
+ * THE CHAIN ORDER, AS DATA — the table the DSP walks, and the dispatch that walks it.
+ *
+ * ⚠️ THIS REPLACED TWO STRAIGHT-LINE PASSES (`chainPreCpp` / `chainPostCpp`), and the reason is the GUI and
+ * the Pi remote rather than the CPU. The order used to be a BUILD INPUT: those two functions emitted the
+ * stages before the model and after it, as C++ written out in the board's order. An order that exists only in
+ * the generated source cannot be changed by a drag in a panel, cannot be saved in a host's session, and
+ * cannot be read by a phone talking to a headless Pi. So it is a table, and `p->stage_order` is what runs.
+ *
+ * THE DEFAULT IS THE IDENTITY, and that is what keeps every existing proof valid: the generator already emits
+ * the stages in signal order, so the compiled default is 0,1,2,… — the same sequence the old straight-line
+ * code ran, through the same `blendCpp` bodies with the same `on == 1` skip. The arithmetic is not merely
+ * equivalent; it is the same operations in the same order.
+ *
+ * ⚠️ THE MODEL IS IN THE TABLE BUT NOT IN THE SWITCH. It is the one stage that is not per-sample — it runs
+ * once per chunk and IN PLACE, which is why the process loop is split around it at all. Its case is
+ * deliberately empty: its POSITION in the order is what decides which side of it a block runs on, and it has
+ * no per-sample DSP of its own. The output level's case is empty for a different reason — it is applied on
+ * the plugin's OUTPUT, after both channels.
+ */
+export function stageTableCpp(chain) {
+  const stages = chain.stages || [];
+  const at = modelStageIndex(chain);
+  return `// ── the chain order, AS DATA ─────────────────────────────────────────────────────────────────────────
+// One id per stage, in the chain's own declaration order. The dispatch below does not care what this order
+// is — it walks \`p->stage_order\`, which starts as the table here and which a host's saved session may
+// replace. See lib/ampChain.js for why this is a table rather than two written-out passes.
+//
+// ⚠️ THIS HALF IS EMITTED BEFORE \`plugin_t\` AND THE DISPATCH AFTER IT, and that is the only reason there
+// are two functions: the struct sizes itself from MORPHEUS_NUM_STAGES, and the dispatch needs the struct.
+#define MORPHEUS_NUM_STAGES ${stages.length}
+enum {
+${stages.map((s, i) => `   ${stageId(s)} = ${i}`).join(',\n')}
+};
+
+// 255 is "this chain has no such stage" — not a stage number, and compared against, never indexed with.
+#define MORPHEUS_NO_MODEL_STAGE 255
+${at < 0 ? '#define MORPHEUS_MODEL_STAGE MORPHEUS_NO_MODEL_STAGE' : `#define MORPHEUS_MODEL_STAGE ${stageId(stages[at])}`}
+
+// The compiled default: the order the generator emitted the stages in, which is the signal order.
+static const unsigned char kMorpheusDefaultOrder[MORPHEUS_NUM_STAGES] = {
+${stages.map((_, i) => `   ${i},`).join('\n')}
+};
+
+// ⭐ WHAT EACH STAGE IS, alongside WHERE it runs. The id table above is identity — for a board it is the
+// block's \`instanceId\`, which is deliberately opaque. This is the KIND, so anything holding only an order can
+// still say what it is looking at, and so a check can assert the ORDER OF KINDS instead of searching the
+// process loop for function names — which is a spelling, not a behaviour, and went on passing vacuously the
+// moment the dispatch moved out of the loop (see KNOWN-HAZARDS.md H19).
+static const char *const kMorpheusStageKinds[MORPHEUS_NUM_STAGES] = {
+${stages.map((s) => `   ${cstr(s.kind)},`).join('\n')}
+};`;
+}
+
+/**
+ * THE DISPATCH THAT WALKS THE ORDER — emitted after `plugin_t`, because it takes one.
+ *
+ * ⚠️ THE CASES ARE ADDRESSED BY ID, NOT BY POSITION, and that is what makes the order a VALUE: a case is
+ * reached because `p->stage_order` named it, not because it happened to be written third. Each case carries
+ * its own `blendCpp` braces, so `on == 1` still skips its blend line exactly as it did when this was
+ * straight-line code — which is what keeps every measured null exactly where it was.
+ */
+export function stageDispatchCpp(chain, params) {
+  const stages = chain.stages || [];
+  const cases = stages
+    .map((stage) => {
+      const id = stageId(stage);
+      if (stage.kind === 'model') {
+        return [
+          `      case ${id}:`,
+          '         // NOT A PER-SAMPLE STAGE. The model runs once per chunk, in place, in plug_process — see the',
+          '         // note above. Its position in the order is what decides which side of it a block runs on.',
+          '         break;',
+        ].join('\n');
+      }
+      if (stage.kind === 'level') {
+        return [
+          `      case ${id}:`,
+          '         // NOT A PER-SAMPLE STAGE. The output level is applied on the plugin\'s OUTPUT, after both',
+          '         // channels, so it cannot be a stage inside one channel\'s path.',
+          '         break;',
+        ].join('\n');
+      }
+      const body = blendCpp(stage, params);
+      if (!body.length) return `      case ${id}:\n         break;`;
+      return `      case ${id}:\n${body.join('\n')}\n         break;`;
+    })
+    .join('\n');
+  return `// WHERE THE MODEL SITS **IN THE ORDER THAT IS RUNNING**, which is not a constant any more: an order
+// loaded from a saved session can have put a block on the other side of it. Returns MORPHEUS_NUM_STAGES when
+// there is no model stage, which makes the first pass every stage and the second pass empty — exactly what
+// the old straight-line code did for a chain with no model in it.
+static inline unsigned char morpheus_model_at(const ${'plugin_t'} *p) {
+   for (unsigned char s = 0; s < MORPHEUS_NUM_STAGES; ++s) {
+      if (p->stage_order[s] == MORPHEUS_MODEL_STAGE) return s;
+   }
+   return MORPHEUS_NUM_STAGES;
+}
+
+// ONE STAGE'S DSP, addressed by ID rather than by position — which is the whole point of the table. \`x\` is the
+// sample and the result replaces it. Each case carries its own \`blendCpp\` braces, so \`on == 1\` still skips
+// its blend line exactly as it did when this was straight-line code.
+static inline double morpheus_stage_dsp(${'plugin_t'} *p, int c, double x, int stage) {
+   switch (stage) {
+${cases}
+      default:
+         break;
+   }
+   return x;
+}`;
+}
+
+/**
+ * THE CABINET A PROJECT HAS AND THE CHAIN DOES NOT NAME — a `.wav` in a project with no Cabinet block.
+ *
+ * Before a board existed, "there is a .wav in the project" and "the speaker is in the signal path" were the
+ * same question, so the cabinet was emitted for every chain and its DSP is behind `#if MORPHEUS_HAS_CAB`.
+ * Emitting it for a chain that does not name one is what keeps the plain plugin, the amp plugin and the three
+ * runner proofs generating the same plugin. A board never takes this branch: it says what is in the path, and
+ * `cabInPath` is derived from that.
+ *
+ * ⚠️ IT IS DELIBERATELY NOT A STAGE AND NOT WRAPPED IN A BLEND. There is no BLOCK behind it — no stage id in
+ * the order table, and therefore nothing a reorder can move — so there is no switch to read and nothing to
+ * fade it with. It convolves, as it always did; it is not a control. It is emitted after the order walk,
+ * which is where it has always run.
+ */
+export function legacyCabCpp(chain, cabInPath = true) {
+  const stages = chain.stages || [];
+  return cabInPath && !stages.some((s) => s.kind === 'cab') ? '__CAB_STAGE__' : '';
+}
+
+/** Every parameter stepped one sample toward its target. */
+export function smoothCpp(skipIdx = null) {
+  return [
+    '         for (uint32_t k = 0; k < MORPHEUS_NUM_PARAMS; ++k) {',
+    ...(skipIdx ? [`            if (k == ${skipIdx}) continue;`] : []),
+    '            p->smoothed[k] += (p->value[k] - p->smoothed[k]) * 0.001;',
+    '         }',
+  ].join('\n');
+}
+
+/**
+ * ONE parameter stepped one sample toward its target, for the parameter that has to keep its own ramp.
+ *
+ * WHY THIS EXISTS. The output level is applied AFTER the model, and the model now runs a whole block at a
+ * time — so the output smoother would otherwise be stepped in the first pass, run a block ahead, and apply
+ * a block-early value to every sample in it. That is 1.3 ms of ramp at 64 frames: inaudible, and still a
+ * difference nobody asked for, so the output ramp is stepped where the output is, and the first pass
+ * deliberately skips it.
+ */
+export function smoothOneCpp(idxName) {
+  return `         p->smoothed[${idxName}] += (p->value[${idxName}] - p->smoothed[${idxName}]) * 0.001;`;
+}

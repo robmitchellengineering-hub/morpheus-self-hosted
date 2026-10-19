@@ -1,0 +1,1 @@
+{ "name": "runnable-app", "private": true, "version": "1.0.0", "description": "A minimal self-contained app used to prove the generated-app smoke test can boot and exercise one.", "main": "server/index.js", "scripts": { "start": "node server/index.js" }, "dependencies": { "express": "^4.19.2", "sqlite3": "^5.1.7", "jsonwebtoken": "^9.0.2", "dotenv": "^16.4.5" } }

@@ -1,0 +1,87 @@
+# What a bit width costs, measured on a real model.
+#
+# WHY THIS EXISTS
+#
+# "Neural networks on FPGAs are cheap because of quantization" is true and useless on its own. It does not say
+# how many bits, what that costs to store, or what it does to the sound — and the answer decides whether an FPGA
+# (or a Daisy, or a DSP) is viable at all. This runs the question end to end on a REAL trained model: quantize a
+# `.nam`'s weights, render both versions through the reference engine, and report the difference plus the
+# storage.
+#
+# THE ENGINE IS NOT OURS, DELIBERATELY. NeuralAmpModelerCore (MIT) is the reference implementation; the CLI
+# fetches and builds it once, and uses its `render` tool. Hand-porting WaveNet and LSTM forward passes would have
+# been a second implementation of somebody else's format — wrong in ways nobody would ever notice.
+#
+# THE MODELS ARE MIT TOO, and are fetched rather than committed: `example_models/` from NeuralAmpModelerCore,
+# and the identity model from neural-amp-modeler's test resources. Nothing third-party is stored in the repo.
+#
+# NOT ON PULL REQUESTS: it clones a repository, builds a C++ engine and downloads models. The pure parts — the
+# quantizer, the container, the byte budget — are asserted on EVERY pull request by
+# `scripts/verify-nam-quantize.mjs`, which needs none of that.
+#
+#   gh workflow run audio-quantize.yml --ref main
+name: Audio model quantization
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quantize:
+    name: measure a real model at 4/6/8/12/16 bits
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # The runner's cmake, git and g++ are all the CLI needs to fetch and build the reference engine.
+      - name: Fetch the example models (MIT)
+        run: |
+          mkdir -p .cache/models
+          base=https://raw.githubusercontent.com/sdatkinson/NeuralAmpModelerCore/main/example_models
+          curl -sSfL -o .cache/models/lstm.nam "$base/lstm.nam"
+          curl -sSfL -o .cache/models/wavenet_a1_standard.nam "$base/wavenet_a1_standard.nam"
+          curl -sSfL -o .cache/models/linear_1.nam \
+            https://raw.githubusercontent.com/sdatkinson/neural-amp-modeler/main/tests/resources/models/identity/linear_1.nam
+          ls -la .cache/models
+
+      # FIRST, the control: an identity model has to come back unchanged. That is the assertion that the engine
+      # and the measurement agree, and without it every number below could be measuring the plumbing.
+      - name: The identity model must come back unchanged
+        run: |
+          node scripts/audio-measure.mjs signals /tmp/sig > /dev/null
+          node scripts/audio-quantize.mjs nam .cache/models/lstm.nam --bits 8 --block 64 > /dev/null
+          R=.cache/namcore/build/tools/render
+          "$R" .cache/models/linear_1.nam /tmp/sig/sine-1k.wav /tmp/sig/identity.wav
+          node scripts/audio-measure.mjs compare /tmp/sig/sine-1k.wav /tmp/sig/identity.wav --json > /tmp/identity.json
+          node -e "
+            const r = JSON.parse(require('fs').readFileSync('/tmp/identity.json', 'utf8'));
+            if (!(r.nullDepthDb < -120)) {
+              console.error('the identity model did not come back unchanged:', r.nullDepthDb, 'dB');
+              process.exit(1);
+            }
+            console.log('identity preserved at', r.nullDepthDb.toFixed(1), 'dB — engine and measurement agree');
+          "
+
+      # Then the real question, on a real trained model.
+      - name: Quantization sweep — a real WaveNet at 4/6/8/12/16 bits
+        run: node scripts/audio-quantize.mjs nam .cache/models/wavenet_a1_standard.nam --sweep --block 64
+
+      # And the trade-off that decides the deployment: finer scales buy accuracy and cost storage.
+      - name: Scale granularity at 8 bits
+        run: |
+          for b in 4 16 64 256; do
+            node scripts/audio-quantize.mjs nam .cache/models/wavenet_a1_standard.nam --bits 8 --block "$b" | grep -E '^    8'
+          done
+
+      - name: Write the deployment container a non-float backend would read
+        run: |
+          node scripts/audio-quantize.mjs nam .cache/models/wavenet_a1_standard.nam --bits 8 --block 64 \
+            --out-model /tmp/wavenet-8bit.model.json
+          node scripts/audio-quantize.mjs model /tmp/wavenet-8bit.model.json

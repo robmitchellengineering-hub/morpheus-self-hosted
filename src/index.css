@@ -1,0 +1,433 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Share+Tech+Mono&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* CLEAR (default) theme — same black/green Matrix identity, but with a
+     brighter, less-saturated primary green (better contrast at every opacity
+     level used across the app for captions/labels), a visible border/panel
+     tone instead of a near-invisible one, and real hue variety for status
+     indicators (amber/blue/red) instead of everything being a shade of green.
+     See [data-theme="classic"] below for the original all-green look. */
+  :root {
+    --background: 0 0% 0%;
+    --foreground: 142 90% 58%;
+    --card: 0 0% 3%;
+    --card-foreground: 142 90% 58%;
+    --popover: 0 0% 3%;
+    --popover-foreground: 142 90% 58%;
+    --primary: 142 90% 58%;
+    --primary-foreground: 0 0% 0%;
+    --secondary: 142 45% 12%;
+    --secondary-foreground: 142 70% 68%;
+    --muted: 0 0% 8%;
+    --muted-foreground: 150 22% 66%;
+    --accent: 190 85% 55%;
+    --accent-foreground: 0 0% 0%;
+    --destructive: 0 78% 58%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 150 28% 22%;
+    --input: 150 28% 22%;
+    --ring: 142 90% 58%;
+    --chart-1: 142 90% 58%;
+    --chart-2: 190 85% 55%;
+    --chart-3: 38 92% 58%;
+    --chart-4: 320 70% 60%;
+    --chart-5: 0 78% 58%;
+    /* Semantic status tones — used for status dots/pills (connected, needs
+       setup, informational, error) so those read at a glance instead of
+       everything being the same green. */
+    --status-success: 142 80% 55%;
+    --status-warning: 38 92% 58%;
+    --status-info: 199 89% 60%;
+    --status-danger: 0 78% 58%;
+    /* Big page titles / hero "MORPHEUS" text / the first-screen welcome
+       heading always use the original darker Matrix green, regardless of
+       which theme (Clear or Classic) is active — requested separately from
+       the rest of the Clear-theme brightening. */
+    --heading: 130 100% 50%;
+    /* Near-white body copy (2026-09-12, Rob: "words are still green" on
+       /stats/alice, comparing against a standalone report artifact whose
+       body text was a pale near-white, reserving saturated color for
+       headings/numbers/badges) — same hue family as --primary so it still
+       reads as "this app", just far lighter, instead of a jarring pure
+       #fff. Use for real reading copy (paragraphs, primary table values);
+       leave headline numbers, H1s and glow effects on --primary/--heading. */
+    --text-ink: 142 35% 90%;
+    --text-ink-strong: 142 25% 95%;
+    --text-ink-max: 0 0% 100%;
+    --radius: 0.25rem;
+    --font-heading: 'Share Tech Mono', ui-monospace, monospace;
+    --font-body: 'JetBrains Mono', ui-monospace, monospace;
+    --font-display: 'Share Tech Mono', ui-monospace, monospace;
+    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+    --sidebar-background: 0 0% 0%;
+    --sidebar-foreground: 142 90% 58%;
+    --sidebar-primary: 142 90% 58%;
+    --sidebar-primary-foreground: 0 0% 0%;
+    --sidebar-accent: 142 45% 12%;
+    --sidebar-accent-foreground: 142 70% 68%;
+    --sidebar-border: 150 28% 22%;
+    --sidebar-ring: 142 90% 58%;
+  }
+
+  .dark {
+    --background: 0 0% 0%;
+    --foreground: 142 90% 58%;
+    --card: 0 0% 3%;
+    --card-foreground: 142 90% 58%;
+    --popover: 0 0% 3%;
+    --popover-foreground: 142 90% 58%;
+    --primary: 142 90% 58%;
+    --primary-foreground: 0 0% 0%;
+    --secondary: 142 45% 12%;
+    --secondary-foreground: 142 70% 68%;
+    --muted: 0 0% 8%;
+    --muted-foreground: 150 22% 66%;
+    --accent: 190 85% 55%;
+    --accent-foreground: 0 0% 0%;
+    --destructive: 0 78% 58%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 150 28% 22%;
+    --input: 150 28% 22%;
+    --ring: 142 90% 58%;
+    --chart-1: 142 90% 58%;
+    --chart-2: 190 85% 55%;
+    --chart-3: 38 92% 58%;
+    --chart-4: 320 70% 60%;
+    --chart-5: 0 78% 58%;
+    --status-success: 142 80% 55%;
+    --status-warning: 38 92% 58%;
+    --status-info: 199 89% 60%;
+    --status-danger: 0 78% 58%;
+    --heading: 130 100% 50%;
+    --text-ink: 142 35% 90%;
+    --text-ink-strong: 142 25% 95%;
+    --text-ink-max: 0 0% 100%;
+    --sidebar-background: 0 0% 0%;
+    --sidebar-foreground: 142 90% 58%;
+    --sidebar-primary: 142 90% 58%;
+    --sidebar-primary-foreground: 0 0% 0%;
+    --sidebar-accent: 142 45% 12%;
+    --sidebar-accent-foreground: 142 70% 68%;
+    --sidebar-border: 150 28% 22%;
+    --sidebar-ring: 142 90% 58%;
+  }
+
+  /* CLASSIC MATRIX theme — the original pure #00ff41-on-black look, kept
+     pixel-for-pixel identical to before this change. Selectable in
+     Settings → Appearance. Placed after .dark so it always wins the
+     cascade when active, regardless of the OS dark-mode class. */
+  [data-theme="classic"] {
+    --background: 0 0% 0%;
+    --foreground: 130 100% 50%;
+    --card: 0 0% 3%;
+    --card-foreground: 130 100% 50%;
+    --popover: 0 0% 3%;
+    --popover-foreground: 130 100% 50%;
+    --primary: 130 100% 50%;
+    --primary-foreground: 0 0% 0%;
+    --secondary: 130 60% 10%;
+    --secondary-foreground: 130 100% 60%;
+    --muted: 0 0% 8%;
+    --muted-foreground: 130 50% 40%;
+    --accent: 130 100% 45%;
+    --accent-foreground: 0 0% 0%;
+    --destructive: 0 100% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 130 50% 15%;
+    --input: 130 50% 15%;
+    --ring: 130 100% 50%;
+    --chart-1: 130 100% 50%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+    --status-success: 130 100% 50%;
+    --status-warning: 45 100% 51%;
+    --status-info: 130 100% 45%;
+    --status-danger: 0 100% 50%;
+    --heading: 130 100% 50%;
+    --text-ink: 130 35% 90%;
+    --text-ink-strong: 130 25% 95%;
+    --text-ink-max: 0 0% 100%;
+    --sidebar-background: 0 0% 0%;
+    --sidebar-foreground: 130 100% 50%;
+    --sidebar-primary: 130 100% 50%;
+    --sidebar-primary-foreground: 0 0% 0%;
+    --sidebar-accent: 130 60% 10%;
+    --sidebar-accent-foreground: 130 100% 60%;
+    --sidebar-border: 130 50% 15%;
+    --sidebar-ring: 130 100% 50%;
+  }
+
+  /* BORING theme (Feature Backlog Tier 4 item #7) — originally a plain
+     light/corporate look; recolored 2026-09-02 per Rob's request to a dark
+     palette instead: black background, dark grey body text, dark green +
+     pastel green accents. Rounded corners are kept (the one part of the
+     original "corporate, not terminal chrome" spec that's independent of
+     light-vs-dark). Semantic status colors stay purposeful, not decorative
+     (destructive/warning keep their own hues rather than being folded into
+     the green accent scheme). Brightened 2026-09-02 (same day, second pass)
+     per Rob's "take a bit brighter" — background stays pure black (the
+     theme's identity), but text/panel/border/accent lightness values are
+     all raised ~6-13 points so it doesn't read as muddy/low-contrast against
+     that black. --status-danger and the destructive pair are left alone on
+     purpose — an alarm red shouldn't get softer just because the rest of
+     the theme did.
+
+     Note on variable choice: this app's bespoke Matrix-styled markup (chat,
+     settings, landing, etc.) overwhelmingly uses `text-primary`/
+     `border-primary`/`bg-primary` for body text and UI chrome alike (1000+
+     call sites) rather than `text-foreground` (under 20). So --primary is
+     set to the "dark grey text" color here — that's what actually renders
+     as the visible text throughout the app — while --accent/--secondary/
+     --chart-N and --status-success carry the "dark green and pastel green"
+     accent colors for the smaller set of elements that use them (badges,
+     highlights, status dots, charts). --foreground/--card-foreground follow
+     --primary for consistency in the few spots that do read them.
+     Selectable in Settings → Appearance. Placed after [data-theme="classic"]
+     so it always wins the cascade when active. */
+  [data-theme="boring"] {
+    --background: 0 0% 0%;
+    --foreground: 0 0% 78%;
+    --card: 0 0% 9%;
+    --card-foreground: 0 0% 78%;
+    --popover: 0 0% 9%;
+    --popover-foreground: 0 0% 78%;
+    --primary: 0 0% 78%;
+    --primary-foreground: 0 0% 0%;
+    --secondary: 150 45% 16%;
+    --secondary-foreground: 140 45% 80%;
+    --muted: 0 0% 12%;
+    --muted-foreground: 0 0% 55%;
+    --accent: 140 50% 72%;
+    --accent-foreground: 0 0% 0%;
+    --destructive: 0 72% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 150 20% 24%;
+    --input: 150 20% 24%;
+    --ring: 140 50% 72%;
+    --chart-1: 140 50% 72%;
+    --chart-2: 150 45% 38%;
+    --chart-3: 38 92% 60%;
+    --chart-4: 170 40% 52%;
+    --chart-5: 0 72% 50%;
+    --status-success: 140 55% 62%;
+    --status-warning: 38 92% 60%;
+    --status-info: 199 70% 58%;
+    --status-danger: 0 72% 50%;
+    --heading: 140 60% 68%;
+    --text-ink: 0 0% 90%;
+    --text-ink-strong: 0 0% 95%;
+    --text-ink-max: 0 0% 100%;
+    --radius: 0.6rem;
+    --sidebar-background: 0 0% 0%;
+    --sidebar-foreground: 0 0% 78%;
+    --sidebar-primary: 0 0% 78%;
+    --sidebar-primary-foreground: 0 0% 0%;
+    --sidebar-accent: 150 45% 16%;
+    --sidebar-accent-foreground: 140 45% 80%;
+    --sidebar-border: 150 20% 24%;
+    --sidebar-ring: 140 50% 72%;
+  }
+
+  /* BORING / LIGHT (2026-09-02, Rob's request) — a light/dark sub-toggle
+     within Boring itself, selectable in Settings → Appearance whenever
+     Boring is the active theme. Flips Boring's black background to white
+     and its grey text to near-black; every other variable is the same
+     color flipped/re-tuned for contrast against a white background instead
+     of black (dark green accents instead of pale ones, light borders
+     instead of dark ones, etc.) rather than a literal invert, so text and
+     accents stay readable. --destructive/--status-danger are left exactly
+     as the dark variant has them, same reasoning as above: alarm red
+     shouldn't change just because the rest of the palette did. Two
+     attribute selectors gives this more specificity than the plain
+     [data-theme="boring"] block above, so it wins the cascade whenever
+     both attributes are present -- no !important needed. */
+  [data-theme="boring"][data-boring-mode="light"] {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 12%;
+    --card: 0 0% 96%;
+    --card-foreground: 0 0% 12%;
+    --popover: 0 0% 96%;
+    --popover-foreground: 0 0% 12%;
+    --primary: 0 0% 12%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 150 45% 92%;
+    --secondary-foreground: 140 45% 25%;
+    --muted: 0 0% 90%;
+    --muted-foreground: 0 0% 38%;
+    --accent: 140 50% 32%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 150 20% 82%;
+    --input: 150 20% 82%;
+    --ring: 140 50% 32%;
+    --chart-1: 140 50% 32%;
+    --chart-2: 150 45% 34%;
+    --chart-3: 38 92% 42%;
+    --chart-4: 170 40% 36%;
+    --chart-5: 0 72% 50%;
+    --status-success: 140 55% 36%;
+    --status-warning: 38 92% 42%;
+    --status-info: 199 70% 40%;
+    --status-danger: 0 72% 50%;
+    --heading: 140 60% 28%;
+    --text-ink: 0 0% 10%;
+    --text-ink-strong: 0 0% 5%;
+    --text-ink-max: 0 0% 0%;
+    --radius: 0.6rem;
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 0 0% 12%;
+    --sidebar-primary: 0 0% 12%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 150 45% 92%;
+    --sidebar-accent-foreground: 140 45% 25%;
+    --sidebar-border: 150 20% 82%;
+    --sidebar-ring: 140 50% 32%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  /* Body copy is the READABLE near-white (--text-ink), not --foreground.
+     --foreground is the bright Matrix green: using it here meant every piece of
+     text that carried no colour class of its own rendered green, which is what
+     made small prose hard to read. Green now means "heading, number or glow",
+     and body text has to opt IN to it rather than opt out.
+
+     Same rule the Alice Stats page arrived at on 2026-09-12, promoted to the
+     default for the whole app (Rob, 2026-09-22): small text legible, colour
+     reserved for things that mean something. */
+  body {
+    @apply bg-background text-ink font-body;
+    overscroll-behavior: none;
+  }
+
+  /* THE INK LADDER (Rob, 2026-09-23).
+
+     He sent a screenshot of the Project History decisions list — "how the
+     smallest white text is too dull hard to read" — and stated the rule:
+
+       "the gradients of brightness of the white text need to start from the
+        brightest as in the level of the biggest white title should be set as
+        the dullest setting and go up from there"
+
+     He is right, and it is measurable. That card set its title at full ink
+     (17.4:1), its description at `text-ink/60` (6.4:1) and its 11px date at
+     `text-ink/40` — which is 3.3:1, below the 4.5:1 floor for small text. The
+     old ladder dimmed text as it got SMALLER, which is backwards: big text is
+     the text that needs contrast least (WCAG asks 3:1 of large text and 4.5:1 of
+     small). So the ladder now runs the other way.
+
+       text-ink         the FLOOR. The dullest any text may be. Large text only.
+       text-ink-strong  more contrast — 12-13px copy.
+       text-ink-max     the most contrast the theme has — 11px and below.
+
+     "Max" is maximum CONTRAST, not maximum brightness, so the light theme gets
+     darker values and the rule survives every theme block.
+
+     What this forbids, and what a guard should enforce: any `text-ink/N` with
+     N below 100. An opacity modifier can only ever make ink dimmer, and dimmer
+     than the floor is the one thing this rule says cannot happen. */
+
+  /* Headings keep the brand green, including the ones with no class of their
+     own. Tailwind text-* utilities still win where a component sets one. */
+  h1, h2, h3, h4, h5, h6 {
+    color: hsl(var(--heading));
+  }
+
+  /* A link is an action, so it carries the action colour and is distinguishable
+     from static prose at a glance. --accent is cyan in every dark theme; the
+     light theme defines its own. */
+  a {
+    color: hsl(var(--accent));
+  }
+
+  /* Command Deck is its own theme, and this is the boundary.
+
+     The deck already declares it: pages/CommandDeck/index.jsx swaps
+     html[data-theme="deck"] while it is mounted, and paints "Tweed & Walnut" —
+     dark walnut on cream, its palette in pages/CommandDeck/deckConstants.js —
+     with its own inline colours. It is a light surface, not one of Morpheus's
+     dark ones.
+
+     The three rules above are defaults for the dark surfaces. An element-level
+     rule beats a colour the element merely inherits, so inside the deck they
+     repainted it: the deck's h1 carries no colour of its own, so it turned
+     Morpheus green on a walnut bar instead of inheriting the cream it was
+     meant to, and a plain link turned cyan on cream.
+
+     Reset them to inherit inside the deck rather than giving those two elements
+     colours of their own: the next app-wide element rule would repaint the next
+     element, and the deck is not ours to restyle. Everything reached by
+     html[data-theme="deck"] is covered, whether or not it sits inside the
+     deck's own root element. */
+  [data-theme='deck'] h1, [data-theme='deck'] h2, [data-theme='deck'] h3,
+  [data-theme='deck'] h4, [data-theme='deck'] h5, [data-theme='deck'] h6,
+  [data-theme='deck'] a {
+    color: inherit;
+  }
+
+  /* Block text-selection highlight menus on UI controls (Android WebView);
+     keep inputs and text areas editable/selectable */
+  button, a, select, .no-select {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  input, textarea, [contenteditable] {
+    -webkit-touch-callout: none;
+    user-select: text;
+  }
+}
+
+@layer utilities {
+  /* Route fade-in. A plain CSS animation (not framer-motion) so the layer is
+     only composited during the 0.18s transition and released once opacity
+     reaches 1 — a persistent composited layer on this fixed scroll container
+     is what reverses typed text in the Android WebView IME. */
+  @keyframes route-fade-in { from { opacity: 0 } to { opacity: 1 } }
+  .route-fade { animation: route-fade-in 0.18s ease-out; }
+
+  @keyframes enter-pulse {
+    0%, 100% { box-shadow: 0 0 6px rgba(0,255,65,0.35), inset 0 0 4px rgba(0,255,65,0.2); border-color: rgba(0,255,65,0.6); }
+    50% { box-shadow: 0 0 22px rgba(0,255,65,0.85), inset 0 0 10px rgba(0,255,65,0.5); border-color: rgba(0,255,65,1); }
+  }
+  .enter-pulse { animation: enter-pulse 2.4s ease-in-out infinite; }
+
+  .neon-glow {
+    text-shadow: 0 0 5px currentColor, 0 0 10px currentColor, 0 0 20px currentColor;
+  }
+  .neon-border {
+    box-shadow: 0 0 5px hsl(var(--primary)), inset 0 0 5px hsl(var(--primary));
+  }
+  .scrollbar-matrix::-webkit-scrollbar { width: 6px; height: 6px; }
+  .scrollbar-matrix::-webkit-scrollbar-track { background: transparent; }
+  .scrollbar-matrix::-webkit-scrollbar-thumb { background: hsl(var(--primary) / 0.3); }
+  .scrollbar-matrix::-webkit-scrollbar-thumb:hover { background: hsl(var(--primary) / 0.5); }
+
+  /* Safe area insets for notched/cutout devices (Android WebView / iOS) */
+  .safe-top { padding-top: env(safe-area-inset-top); }
+  .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+  .safe-left { padding-left: env(safe-area-inset-left); }
+  .safe-right { padding-right: env(safe-area-inset-right); }
+  .safe-px { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+}
+
+/* Mobile workspace height: uses dvh (dynamic viewport height) so the chat bar
+   stays in the visible viewport even when the browser address bar shows/hides.
+   Falls back to vh for older browsers. Desktop uses the full static viewport. */
+.h-workspace-mobile { height: calc(100vh - 3.75rem); height: calc(100dvh - 3.75rem); height: calc(100svh - 3.75rem); }
+@media (min-width: 768px) { .h-workspace-mobile { height: 100vh; } }
+
+/* Dynamic viewport min-height — prevents the page from being taller than the
+   visible viewport on mobile (100vh includes the address bar area). */
+.min-h-dvh { min-height: 100vh; min-height: 100dvh; }

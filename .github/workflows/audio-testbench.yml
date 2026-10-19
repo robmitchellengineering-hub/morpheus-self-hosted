@@ -1,0 +1,49 @@
+# Measure a plugin without a DAW: the offline test bench.
+#
+# WHY THIS EXISTS
+#
+# A plugin can only be judged by what comes out of it, and until now the only way to get that was to open a
+# DAW, load it, play something and listen — which makes "does it alias?", "does it report its latency
+# correctly?" and "does this control do anything at all?" questions of opinion. `scripts/audio-testbench.mjs`
+# compiles the plugin's own CLAP sources against a small offline host, renders signals through it, and puts
+# numbers on all of those.
+#
+# IT RUNS ON LINUX ON PURPOSE. The plugin builds for macOS and Windows are the ones that need Xcode and MSVC and
+# a full clap-wrapper configure; this needs nothing but a C++ compiler, so it runs on the cheapest runner there
+# is — and proves the bench is not incidentally macOS-shaped.
+#
+# NOT ON PULL REQUESTS, deliberately: the guards job installs nothing by design, and this needs a compiler and
+# a one-off header fetch. Until the CLAP headers are cached in the repository the honest place for it is a
+# manual job.
+#
+#   gh workflow run audio-testbench.yml --ref main
+name: Audio plugin test bench
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  testbench:
+    name: measure the reference plugin
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # FIRST, the check that the check can fail. It patches the reference plugin's gain application so the
+      # control is wired to nothing and requires the bench to fail on it — because a bench that cannot fail is
+      # decoration, and this repository has the scars to prove that is worth asserting rather than assuming.
+      - name: The bench can fail (self-test against a plugin whose control does nothing)
+        run: node scripts/audio-testbench.mjs --self-test
+
+      # Then the measurement itself: it must load, run, report its latency honestly, honour its controls, add no
+      # distortion and fold no aliases. --strict turns the reference plugin's known behaviour into assertions.
+      - name: Measure the reference plugin
+        run: node scripts/audio-testbench.mjs --strict --json
