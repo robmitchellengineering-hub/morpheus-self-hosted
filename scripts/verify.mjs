@@ -147,6 +147,7 @@ const HARD = [
   'verify-applied-ops.mjs',
   'verify-broker-minting.mjs',
   'verify-site-uptime.mjs',
+  'verify-guard-count-copy.mjs',
   'boot-smoke.mjs',
 ];
 

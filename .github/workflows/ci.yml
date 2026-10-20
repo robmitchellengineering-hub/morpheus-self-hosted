@@ -1124,6 +1124,12 @@ jobs:
       - name: SEO / machine-readable surface
         run: node scripts/verify-seo-static.mjs
 
+      # Published verification numbers ("N guards", "N mutation tests") are typed in two
+      # hand-maintained places — the capabilities JSON and the Projects page — and drift the
+      # moment a guard or a mutation is added. This pins them to the real counts.
+      - name: Published verification numbers match the code
+        run: node scripts/verify-guard-count-copy.mjs
+
       # Pure function, no database needed — asserts the CORS policy never
       # reflects an arbitrary origin while also allowing credentials.
       - name: CORS origin policy
