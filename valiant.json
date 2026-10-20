@@ -1,0 +1,7 @@
+{
+  "gates": [
+    { "name": "guards", "cmd": ["node", "scripts/verify.mjs"] },
+    { "name": "mutate-guards", "cmd": ["node", "scripts/mutate-guards.mjs"] }
+  ],
+  "ledger": "KNOWN-HAZARDS.md"
+}
