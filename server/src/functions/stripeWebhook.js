@@ -65,6 +65,28 @@ export default async function handler({ req, res }) {
     return;
   }
 
+  // Subscription lifecycle (Valiant Verification). The checkout branch below
+  // fires once, at purchase; seat changes and cancellation arrive as these
+  // events on the same subscription. Rows are matched by Stripe subscription
+  // id, so a subscription this system does not know about is a no-op.
+  if (event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') {
+    const sub = event.data?.object || {};
+    const seats = Number(sub.items?.data?.[0]?.quantity) || 1;
+    try {
+      await prisma.verificationSubscription.updateMany({
+        where: { stripe_subscription_id: sub.id },
+        data: {
+          status: event.type === 'customer.subscription.deleted' ? 'canceled' : (sub.status || 'active'),
+          seats,
+          current_period_end: sub.current_period_end ? new Date(sub.current_period_end * 1000) : undefined,
+        },
+      });
+    } catch (e) {
+      console.error('stripeWebhook: subscription update failed:', e.message);
+    }
+    return { received: true };
+  }
+
   if (event.type !== 'checkout.session.completed') {
     return { received: true, ignored: event.type };
   }
@@ -138,6 +160,47 @@ export default async function handler({ req, res }) {
       } catch (e) {
         console.error('stripeWebhook: CreditTransaction create failed:', e.message);
       }
+    }
+    return { received: true };
+  }
+
+  // Valiant Verification subscription (VDS certification). The package and
+  // head count ride in the session metadata; the Stripe subscription id is on
+  // the session. Recorded so the registry knows who is paying and how many
+  // seats, instead of reconstructing it from Stripe's dashboard by hand.
+  if (metadata.type === 'valiant_verification') {
+    const subId = session.subscription;
+    const seats = Number(metadata.seats) || 1;
+    const pkg = metadata.package || 'unknown';
+    if (!subId) {
+      // Stripe sends a string id for a subscription-mode session; a missing
+      // one means the session was not subscription-mode. Do not create a row
+      // that can never be updated.
+      console.error('stripeWebhook: valiant_verification without subscription id', session.id);
+      return { received: true };
+    }
+    try {
+      await prisma.verificationSubscription.upsert({
+        where: { stripe_subscription_id: subId },
+        update: {
+          package: pkg,
+          seats,
+          status: 'active',
+          stripe_customer_id: session.customer || null,
+          customer_email: session.customer_details?.email || null,
+        },
+        create: {
+          stripe_subscription_id: subId,
+          stripe_customer_id: session.customer || null,
+          package: pkg,
+          seats,
+          status: 'active',
+          customer_email: session.customer_details?.email || null,
+        },
+      });
+      console.log(`VDS subscription recorded: sub=${subId} package=${pkg} seats=${seats}`);
+    } catch (e) {
+      console.error('stripeWebhook: VerificationSubscription upsert failed:', e.message);
     }
     return { received: true };
   }

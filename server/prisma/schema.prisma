@@ -1655,3 +1655,23 @@ model SiteUptimeCheck {
   @@index([project_id, checked_at])
   @@map("site_uptime_checks")
 }
+
+// Valiant Verification (VDS certification) subscriptions — who is paying and
+// how many developer seats. Written by stripeWebhook.js from the checkout
+// metadata (package + seats) and the customer.subscription.* events. The seat
+// count is the Stripe line-item quantity; the billing portal changes it.
+// Migration: prisma/add-verification-subscriptions.sql (hand-run, per H8).
+model VerificationSubscription {
+  id                     String    @id @default(uuid())
+  stripe_customer_id     String?
+  stripe_subscription_id String    @unique
+  package                String
+  seats                  Int       @default(1)
+  status                 String    @default("active") // active | past_due | canceled
+  customer_email         String?
+  current_period_end     DateTime?
+  created_date           DateTime  @default(now())
+  updated_date           DateTime  @updatedAt
+
+  @@map("verification_subscriptions")
+}
