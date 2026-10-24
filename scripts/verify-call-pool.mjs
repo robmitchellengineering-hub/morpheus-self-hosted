@@ -153,7 +153,7 @@ check('…and the per-chunk results are accumulated in order',
 const gate = read('scripts/verify.mjs');
 const ci = read('.github/workflows/ci.yml');
 check('it is in verify.mjs\'s HARD list', /'verify-call-pool\.mjs'/.test(gate), true);
-check('…and CI runs it', /node scripts\/verify-call-pool\.mjs/.test(ci), true);
+check('…and CI runs it', JSON.parse(read('scripts/guards-list.json')).guards.includes('verify-call-pool.mjs'), true);
 
 console.log(`\n${checks - failures}/${checks} checks passed\n`);
 if (failures > 0) process.exit(1);

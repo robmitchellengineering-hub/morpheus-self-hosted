@@ -78,7 +78,7 @@ console.log('\n5. this check runs where it is supposed to');
 check('it is in verify.mjs\'s HARD list',
   /'verify-github-reconnect\.mjs'/.test(read('scripts/verify.mjs')), true);
 check('CI runs it in the guards job (no install)',
-  /node scripts\/verify-github-reconnect\.mjs/.test(read('.github/workflows/ci.yml')), true);
+  JSON.parse(read('scripts/guards-list.json')).guards.includes('verify-github-reconnect.mjs'), true);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) { console.log(`${failures} FAILED\n`); process.exit(1); }

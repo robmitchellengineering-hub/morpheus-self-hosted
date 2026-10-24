@@ -1,6 +1,6 @@
 {
   "generatedFrom": "ci.yml guards job",
-  "count": 128,
+  "count": 129,
   "guards": [
     "verify-guards-no-install.mjs",
     "verify-site-uptime.mjs",

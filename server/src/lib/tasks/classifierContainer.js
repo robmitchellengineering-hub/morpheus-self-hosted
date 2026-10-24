@@ -74,7 +74,7 @@ function tensor(name, shape, values, { bits, perChannel = 0 }) {
   const t = { name, shape, codes };
   if (scales.length > 1) {
     t.scales = scales;
-    t.block_size = values.length / scales.length;
+    t.block_size = undefined;
   } else {
     t.scale = scales[0];
   }

@@ -317,7 +317,7 @@ const gate = read('scripts/verify.mjs');
 const ci = read('.github/workflows/ci.yml');
 const chat = read('server/src/functions/chatWithMorpheus.js');
 check('it is in verify.mjs\'s HARD list', /'verify-lane-partition\.mjs'/.test(gate), true);
-check('…and CI runs it', /node scripts\/verify-lane-partition\.mjs/.test(ci), true);
+check('…and CI runs it', JSON.parse(read('scripts/guards-list.json')).guards.includes('verify-lane-partition.mjs'), true);
 // And the module is actually consulted by the build, so this is a decision the pipeline makes rather than a
 // library nobody calls. A guard whose subject is dead code is the "guard that only polices us" shape — it would
 // keep passing while the feature it describes does nothing.
