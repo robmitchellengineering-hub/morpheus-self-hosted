@@ -37,7 +37,7 @@ const router = Router();
 // checking a backend on their OWN project, and while it was here it fetched a caller-supplied URL
 // and returned that URL's status (an unauthenticated SSRF probe oracle) and resolved another
 // user's deployed URL from a bare projectId. See the header of functions/checkDeployHealth.js.
-const PUBLIC_FUNCTIONS = new Set(['browseTemplates', 'getPublicTemplate', 'downloadFreeTemplate', 'stripeWebhook', 'createDonationCheckout', 'createCertificationCheckout', 'submitFeedback']);
+const PUBLIC_FUNCTIONS = new Set(['browseTemplates', 'getPublicTemplate', 'downloadFreeTemplate', 'stripeWebhook', 'createDonationCheckout', 'createCertificationCheckout', 'createBillingPortal', 'submitFeedback']);
 
 // Functions that require the caller's User.role to be 'admin', enforced
 // server-side. generateRebuildDoc used to rely solely on the frontend's
