@@ -387,6 +387,25 @@ CREATE TABLE "donations" (
 );
 
 -- CreateTable
+CREATE TABLE "verification_subscriptions" (
+    "id" TEXT NOT NULL,
+    "stripe_customer_id" TEXT,
+    "stripe_subscription_id" TEXT NOT NULL,
+    "package" TEXT NOT NULL,
+    "seats" INTEGER NOT NULL DEFAULT 1,
+    "status" TEXT NOT NULL DEFAULT 'active',
+    "customer_email" TEXT,
+    "current_period_end" TIMESTAMP(3),
+    "created_date" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_date" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "verification_subscriptions_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "verification_subscriptions_stripe_subscription_id_key" ON "verification_subscriptions"("stripe_subscription_id");
+
+-- CreateTable
 CREATE TABLE "feedback" (
     "id" TEXT NOT NULL,
     "type" TEXT NOT NULL DEFAULT 'feature',
