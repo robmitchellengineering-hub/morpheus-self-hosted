@@ -222,7 +222,7 @@ console.log('\n15. this check runs where it is supposed to');
 check('it is in verify.mjs\'s HARD list',
   /'verify-frontend-deploy\.mjs'/.test(read('scripts/verify.mjs')), true);
 check('CI runs it in the guards job (no install)',
-  /node scripts\/verify-frontend-deploy\.mjs/.test(read('.github/workflows/ci.yml')), true);
+  JSON.parse(read('scripts/guards-list.json')).guards.includes('verify-frontend-deploy.mjs'), true);
 
 console.log('\n7. the token is read through the helper, not parsed raw');
 // Added 2026-09-28 in review, and it is the check that would have caught a real defect: this file

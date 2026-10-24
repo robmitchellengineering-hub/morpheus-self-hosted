@@ -78,7 +78,7 @@ check('there is a way back to the full list from the dead end', /SHOW ALL CONSTR
 console.log('\n6. this check runs where it is supposed to');
 check('it is in verify.mjs\'s HARD list', /'verify-workspace-search\.mjs'/.test(read('scripts/verify.mjs')), true);
 check('CI runs it in the guards job (no install)',
-  /node scripts\/verify-workspace-search\.mjs/.test(read('.github/workflows/ci.yml')), true);
+  JSON.parse(read('scripts/guards-list.json')).guards.includes('verify-workspace-search.mjs'), true);
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) { console.log(`${failures} FAILED\n`); process.exit(1); }

@@ -448,7 +448,12 @@ check('every guard is run by the one gate',
 check('every entry in the gate is a real script',
   hardListed.filter((f) => !existsSync(join(REPO, 'scripts', f))), [])
 // CI is the second list, and two lists drift the same way one does.
-const ciRuns = new Set([...ci.matchAll(/node (scripts\/[\w.-]+\.mjs)/g)].map((m) => m[1].replace('scripts/', '')))
+// The guards job runs the manifest from ONE step now (run-guards.mjs), so the
+// individual hard gates are no longer named in ci.yml — they live in the manifest.
+const ciRuns = new Set([
+  ...[...ci.matchAll(/node (scripts\/[\w.-]+\.mjs)/g)].map((m) => m[1].replace('scripts/', '')),
+  ...JSON.parse(read('scripts/guards-list.json')).guards,
+])
 // boot-smoke boots the real server, so it needs the server's own dependencies —
 // and server/package-lock.json is untracked (H4), so CI cannot install them.
 const CI_CANNOT = ['boot-smoke.mjs', 'verify-schema-prod.mjs', 'verify-billing-ledger.mjs']
