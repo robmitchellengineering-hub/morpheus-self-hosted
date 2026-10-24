@@ -3960,8 +3960,8 @@ export const MUTATIONS = [
     // guard's own header says the property is "no code path here fetches an address the caller chose", and a
     // behavioural test cannot see this, because both legitimate callers pass an owned projectId.
     why: 'Puts checkDeployHealth back in PUBLIC_FUNCTIONS, so an unauthenticated caller can make the server fetch an address they choose.',
-    find: "const PUBLIC_FUNCTIONS = new Set(['browseTemplates', 'getPublicTemplate', 'downloadFreeTemplate', 'stripeWebhook', 'createDonationCheckout', 'submitFeedback']);",
-    replace: "const PUBLIC_FUNCTIONS = new Set(['browseTemplates', 'getPublicTemplate', 'downloadFreeTemplate', 'stripeWebhook', 'createDonationCheckout', 'submitFeedback', 'checkDeployHealth']);",
+    find: "const PUBLIC_FUNCTIONS = new Set(['browseTemplates', 'getPublicTemplate', 'downloadFreeTemplate', 'stripeWebhook', 'createDonationCheckout', 'createCertificationCheckout', 'createBillingPortal', 'submitFeedback']);",
+    replace: "const PUBLIC_FUNCTIONS = new Set(['browseTemplates', 'getPublicTemplate', 'downloadFreeTemplate', 'stripeWebhook', 'createDonationCheckout', 'createCertificationCheckout', 'createBillingPortal', 'submitFeedback', 'checkDeployHealth']);",
   },
   {
     guard: 'verify-deploy-health-scope.mjs',
