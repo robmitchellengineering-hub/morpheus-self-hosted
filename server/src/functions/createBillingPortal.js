@@ -7,11 +7,15 @@
 // "update quantity" control is the head-count control. No second system.
 //
 // Accepts either a checkout session id (what the success URL carries) or a
-// Stripe customer id, resolves the customer, and returns a portal session URL.
+// Stripe customer id. Two calling conventions, same as the checkout:
+//   POST (JSON) → { url }      for a same-origin app that can fetch.
+//   GET  (query) → 303 redirect for a static site on another origin (no CORS).
 import { stripeFetch, encodeForm } from '../lib/stripe.js';
 
-export default async function handler({ body }) {
-  const { sessionId, customerId, returnUrl } = body || {};
+export default async function handler({ body, query, req, res }) {
+  // For a GET the params arrive in the query string; for a POST in the body.
+  const src = body && Object.keys(body).length ? body : (query || {});
+  const { sessionId, customerId, returnUrl } = src;
 
   let customer = customerId;
   if (!customer && sessionId) {
@@ -34,5 +38,8 @@ export default async function handler({ body }) {
     }),
   });
 
+  if (req && req.method === 'GET') {
+    return res.redirect(303, portal.url);
+  }
   return { url: portal.url };
 }
