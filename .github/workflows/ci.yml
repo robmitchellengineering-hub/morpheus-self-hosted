@@ -400,3 +400,8 @@ jobs:
       # made the job ~15 min.
       - name: All guards
         run: node scripts/run-guards.mjs
+
+      # The mutation prover is NOT a guard — it applies sabotages and restores them, so it runs
+      # in its own step (no per-guard timeout) exactly as it did before the aggregation.
+      - name: Every registered guard fails when its subject breaks
+        run: node scripts/mutate-guards.mjs
