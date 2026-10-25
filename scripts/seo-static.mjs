@@ -509,7 +509,8 @@ const verificationHtml = readFileSync(join(ROOT, 'public', 'verification.html'),
   .replace(/__GUARD_COUNT__/g, String(guardCount))
   .replace(/__HAZARD_COUNT__/g, String(hazardCount))
   .replace(/__MUTATION_COUNT__/g, String(MUTATIONS.length))
-  .replace(/__UNPROVEN_BASELINE__/g, String(UNPROVEN_BASELINE));
+  .replace(/__UNPROVEN_BASELINE__/g, String(UNPROVEN_BASELINE))
+  .replace(/__AUDIT_DATE__/g, new Date().toISOString().slice(0, 10));
 writeFileSync(join(DIST, 'verification.html'), verificationHtml);
 writeFileSync(join(DIST, 'manual.html'), manualHtml);
 writeFileSync(join(DIST, 'downloads.html'), downloadsHtml);
