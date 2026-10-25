@@ -368,13 +368,11 @@ export default function Projects() {
           </ul>
 
           <h3>For investors &amp; partners</h3>
-          <p>The full case in one document — why verification became the bottleneck, the twelve-tool survey,
-          how this compares to the funded field, and the disruptor thesis, with its honest boundary stated
-          alongside it.</p>
+          <p>The full case — why verification became the bottleneck, the twelve-tool survey, how this compares
+          to the funded field, and the disruptor thesis, with its honest boundary stated alongside it — now
+          lives under Valiant Verification.</p>
           <p>
-            <a href="/verification-gap-investor.pdf" download>Download the investor brief (PDF)</a><br />
-            <a href="/investor-deck.pdf" download>Download the investor deck — all products (PDF)</a><br />
-            <a href="/methodology-sell.pdf" download>Download the methodology — who makes &ldquo;done&rdquo; mean &ldquo;verified&rdquo; (PDF)</a>
+            <a href="https://vvs.morpheus.nz/" target="_blank" rel="noopener">Read it at vvs.morpheus.nz &rarr;</a>
           </p>
 
           <div className="cta">
