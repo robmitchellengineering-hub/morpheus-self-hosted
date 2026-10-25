@@ -77,7 +77,6 @@ try {
       manual: existsSync(join(tmp, 'manual.html')) ? readFileSync(join(tmp, 'manual.html'), 'utf8') : null,
       downloads: existsSync(join(tmp, 'downloads.html')) ? readFileSync(join(tmp, 'downloads.html'), 'utf8') : null,
       llmsFull: existsSync(join(tmp, 'llms-full.txt')) ? readFileSync(join(tmp, 'llms-full.txt'), 'utf8') : null,
-      verification: existsSync(join(tmp, 'verification.html')) ? readFileSync(join(tmp, 'verification.html'), 'utf8') : null,
     };
   }
 } finally {
@@ -85,7 +84,7 @@ try {
 }
 
 if (generated) {
-  const { html, llms, sitemap, manual, llmsFull, downloads, verification } = generated;
+  const { html, llms, sitemap, manual, llmsFull, downloads } = generated;
 
   // ── The prerender is complete: everything a reader needs is in the HTML ────────────
   const missing = [];
@@ -212,46 +211,20 @@ if (generated) {
   check('the landing page links to it visibly, with a real <a> (it is not an SPA route)',
     landingForManualLink.includes('href="/manual"'));
 
-  // ── THE VERIFICATION PAGE, AND THE SPEC IT PUBLISHES ────────────────────────────────
-  // A real static page (the /manual and /downloads shape), not an SPA route. Its NUMBERS are injected
-  // at build time from the code, so the page cannot drift — the guard recomputes them here and fails if
-  // the generated page disagrees. The spec itself is count-free prose, checked only for existence.
-  const liveGuardCount = readdirSync(join(ROOT, 'scripts')).filter((f) => f.startsWith('verify-') && f.endsWith('.mjs')).length;
-  const liveHazardCount = (readFileSync(join(ROOT, 'KNOWN-HAZARDS.md'), 'utf8').match(/^## H\d+/gm) || []).length;
-  check('a verification page is generated', Boolean(verification) && verification.length > 2000);
-  if (verification) {
-    check('…with the LIVE guard count, not a typed number', verification.includes(String(liveGuardCount)));
-    check('…with the LIVE hazard count, not a typed number', verification.includes(String(liveHazardCount)));
-    check('…with the LIVE mutation-test count, not a typed number', verification.includes(String(MUTATIONS.length)));
-    check('…with the LIVE unproven baseline, not a typed number', verification.includes(String(UNPROVEN_BASELINE)));
-    check('…and no unreplaced template token left in it',
-      !verification.includes('__GUARD_COUNT__') && !verification.includes('__HAZARD_COUNT__')
-      && !verification.includes('__MUTATION_COUNT__') && !verification.includes('__UNPROVEN_BASELINE__')
-      && !verification.includes('__AUDIT_DATE__'));
-    check('…carrying the trust badge, with its audit date filled', /Valiant Verification Certified/.test(verification) && !verification.includes('__AUDIT_DATE__'));
-    check('…visible, with no hiding style anywhere in it', !/display\s*:\s*none|visibility\s*:\s*hidden/i.test(verification));
-    check('…with a title and headline a reader and a crawler both see',
-      /<title>[^<]*verification/i.test(verification) && verification.includes('unlocks code verification'));
-    check('…linking the specification with a real download',
-      /href="\/verification-spec\.md"[^>]*download/.test(verification));
-    check('…linking the GitHub repo (the adoption surface)',
-      verification.includes('github.com/robmitchellengineering-hub/valiant-verification'));
-    check('…linking the investor brief (PDF) with a real download',
-      /href="\/verification-gap-investor\.pdf"[^>]*download/.test(verification));
-  }
   check('the open specification file exists and is substantive',
     existsSync(join(ROOT, 'public', 'verification-spec.md'))
     && readFileSync(join(ROOT, 'public', 'verification-spec.md'), 'utf8').length > 1000);
   check('the investor brief PDF is published',
     existsSync(join(ROOT, 'public', 'verification-gap-investor.pdf')));
+  // The verification page was RETIRED (2026-10-25): it now lives under VVS. The old URL redirects
+  // there, and the page must no longer be advertised as morpheus.nz's own content.
   const verRedirects = readFileSync(join(ROOT, 'public/_redirects'), 'utf8');
-  check('the /verification rewrite comes BEFORE the SPA catch-all',
-    verRedirects.indexOf('/verification  /verification.html') >= 0
-    && verRedirects.indexOf('/verification  /verification.html') < verRedirects.indexOf('/*  /index.html'), true);
+  check('the retired /verification page redirects to the VVS certification page (301)',
+    verRedirects.includes('/verification  https://vvs.morpheus.nz/certification.html  301'), true);
   check('…and there is no React route for it, so the URL has ONE rendering',
     !/path="\/verification"/.test(readFileSync(join(ROOT, 'src/App.jsx'), 'utf8')), true);
-  check('the sitemap lists it as a real page', Boolean(sitemap) && sitemap.includes('<loc>https://morpheus.nz/verification</loc>'));
-  check('llms.txt points at it', Boolean(llms) && llms.includes('/verification'));
+  check('the retired page is no longer in the sitemap', Boolean(sitemap) && !sitemap.includes('morpheus.nz/verification'));
+  check('…and no longer advertised in llms.txt', Boolean(llms) && !llms.includes('/verification'));
 
   // ── Structured data parses and says the right things ──────────────────────────────
   const ldMatch = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
