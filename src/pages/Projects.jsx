@@ -378,7 +378,7 @@ export default function Projects() {
           </p>
 
           <div className="cta">
-            <a className="download" href="/verification">Read the full verification page</a>
+            <a className="download" href="https://vvs.morpheus.nz/certification.html" target="_blank" rel="noopener">Read the full verification page</a>
             <a className="github" href="https://github.com/robmitchellengineering-hub/valiant-verification" target="_blank" rel="noopener">View on GitHub — star · fork · integrate</a>
           </div>
 
