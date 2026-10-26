@@ -174,7 +174,7 @@ operator days later.
 
 RULE: never write code against an external API's shape from memory when a real, cheap way to check exists. This applies to the coder itself — the planner's job is to flag *every* external endpoint it isn't certain of, including "I'm probably right about this one" — verifying costs one HTTP request; being wrong costs a debugging session.
 
-GUARD: accepted without a check — "was the API actually called" needs the live call; `scripts/verify-claim-against-reality.mjs` covers published claims, not this
+GUARD: accepted without a check — "was the API actually called" can only be seen in the live call, so the reviewer must be handed the call's own evidence (a log line, a response body) in the diff
 
 
 ## H11 — a new column on a *listed* entity breaks the whole feature until the SQL is applied
