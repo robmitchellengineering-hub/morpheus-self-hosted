@@ -52,7 +52,9 @@ const argv = process.argv.slice(2);
 const keep = argv.includes('--keep');
 const vision = argv.includes('--vision');
 const routes = argv.filter((a) => a.startsWith('/'));
-const DEFAULT_ROUTES = ['/deck', '/deck/settings', '/deck/tools', '/deck/jarvis', '/settings', '/workspace'];
+// /licences rides the same signed-in harness as the rest: it is a page a signed-in account can reach, so
+// the render job screenshots it and the --vision pass can be asked whether it shows what it should.
+const DEFAULT_ROUTES = ['/deck', '/deck/settings', '/deck/tools', '/deck/jarvis', '/settings', '/licences', '/workspace'];
 const ROUTES = routes.length ? routes : DEFAULT_ROUTES;
 
 const log = (m) => console.log(`  ${m}`);
