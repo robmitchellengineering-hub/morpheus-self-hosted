@@ -33,3 +33,35 @@ export function assertCanIssue(user) {
     throw Object.assign(new Error(ISSUE_DENIED_NOT_ADMIN), { status: 403 });
   }
 }
+
+// ── claiming a purchase (U-11, Rob's secure-link flow) ───────────────────────────────────────────────────
+//
+// The session id from the success URL IS the bearer token. These rules decide what it may produce, and they
+// are pure so a guard can prove every refusal without Stripe or a database.
+
+export const CLAIM_DENIED_UNPAID = 'That checkout has not completed. If you were charged, contact us with the receipt.';
+export const CLAIM_DENIED_TAKEN = 'That purchase has already been claimed by another account.';
+
+/**
+ * @param {object} p
+ * @param {{status?: string, payment_status?: string, metadata?: object}|null} p.session  Stripe checkout session
+ * @param {{id: string, stripe_session_id?: string|null}|null} p.existing  licence already minted for this session
+ * @param {{id?: string}|null} p.user  the signed-in account
+ * @returns {{ok: true, action: 'mint'|'return'} | {ok: false, status: number, reason: string}}
+ */
+export function claimDecision({ session, existing, user }) {
+  if (!user?.id) return { ok: false, status: 401, reason: ISSUE_DENIED_NOT_SIGNED_IN };
+  if (!session) return { ok: false, status: 404, reason: 'That checkout session is not recognised.' };
+  const paid = session.payment_status === 'paid' || session.status === 'complete';
+  if (!paid) return { ok: false, status: 402, reason: CLAIM_DENIED_UNPAID };
+
+  // A licence already minted for this session: hand it back only to the account that owns it, so a leaked
+  // success URL cannot be used to read somebody else's licence.
+  if (existing) {
+    if (existing.created_by_id && existing.created_by_id !== user.id) {
+      return { ok: false, status: 409, reason: CLAIM_DENIED_TAKEN };
+    }
+    return { ok: true, action: 'return' };
+  }
+  return { ok: true, action: 'mint' };
+}

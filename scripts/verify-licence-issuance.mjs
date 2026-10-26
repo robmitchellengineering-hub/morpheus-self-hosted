@@ -90,5 +90,30 @@ console.log("\nthe door — who may ask\n");
   check("the refusal says where to get one", msg === ISSUE_DENIED_NOT_ADMIN && /plan is bought/.test(msg), true);
 }
 
+// ── claiming a paid checkout (U-11) ─────────────────────────────────────────────────────────────────────
+// The secure link after checkout carries a Stripe session id. These cases are the rules that decide what it
+// may produce, and the one that matters most is the last: a leaked session URL must not read someone else's
+// licence.
+console.log("\nclaiming a paid checkout\n");
+{
+  const { claimDecision } = await import("../server/src/lib/licencePolicy.js");
+  const verdict = (args) => {
+    try {
+      const r = claimDecision(args);
+      return r.ok ? `ok:${r.action}` : `refused ${r.status}`;
+    } catch (e) {
+      return `threw ${e.message.slice(0, 20)}`;
+    }
+  };
+  const paid = { payment_status: "paid", status: "complete", metadata: { package: "sdk" } };
+  const me = { id: "u_me" };
+  check("no session -> signed-in account required", verdict({ session: paid, existing: null, user: null }), "refused 401");
+  check("unknown session is refused", verdict({ session: null, existing: null, user: me }), "refused 404");
+  check("an unpaid session mints nothing", verdict({ session: { payment_status: "unpaid", status: "open" }, existing: null, user: me }), "refused 402");
+  check("a paid session mints a licence", verdict({ session: paid, existing: null, user: me }), "ok:mint");
+  check("the same session returns its licence to its owner", verdict({ session: paid, existing: { created_by_id: "u_me" }, user: me }), "ok:return");
+  check("…but NOT to another account", verdict({ session: paid, existing: { created_by_id: "u_other" }, user: me }), "refused 409");
+}
+
 console.log(failures === 0 ? "\nlicence issuance: every case behaves\n" : `\nlicence issuance: ${failures} case(s) wrong\n`);
 process.exit(failures === 0 ? 0 : 1);
