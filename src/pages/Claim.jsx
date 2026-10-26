@@ -32,9 +32,12 @@ export default function Claim() {
         setState({ status: 'ok', licence: data?.licence, plan: data?.plan, seats: data?.seats, already: data?.state === 'already-claimed' });
       } catch (e) {
         if (cancelled) return;
-        const status = e?.response?.status || e?.status;
-        if (status === 401) setState({ status: 'signed-out' });
-        else setState({ status: 'error', message: e?.message || 'That licence could not be issued.' });
+        const status = e?.response?.status || e?.status || e?.statusCode;
+        const text = String(e?.message || '');
+        // Three ways to be signed out: a status, a message, or the function's own 401 wording. The buyer
+        // arriving with no account is the EXPECTED first visitor here, so guessing wrong strands them.
+        if (status === 401 || /sign in/i.test(text)) setState({ status: 'signed-out' });
+        else setState({ status: 'error', message: text || 'That licence could not be issued.' });
       }
     })();
     return () => { cancelled = true; };

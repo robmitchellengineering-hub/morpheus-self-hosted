@@ -54,12 +54,15 @@ const vision = argv.includes('--vision');
 const routes = argv.filter((a) => a.startsWith('/'));
 // /licences rides the same signed-in harness as the rest: it is a page a signed-in account can reach, so
 // the render job screenshots it and the --vision pass can be asked whether it shows what it should.
-const DEFAULT_ROUTES = ['/deck', '/deck/settings', '/deck/tools', '/deck/jarvis', '/settings', '/licences', '/workspace'];
+const DEFAULT_ROUTES = ['/deck', '/deck/settings', '/deck/tools', '/deck/jarvis', '/settings', '/licences', '/claim', '/workspace'];
 // A route can render "fine" and still be the wrong page: an empty shell, a component that fell through to
 // a fallback, or a screen that lost its own subject. blank/boundary/fatal cannot see that - the nav still
 // renders. So a route may declare what must appear in its own body text, and a missing string is a failure.
 const EXPECT = {
   '/licences': ['Licences', 'Valiant Verification SDK'],
+  // No session id in the harness, so this is the error state on purpose: the page must still render its
+  // own heading rather than a blank shell or the error boundary.
+  '/claim': ['Your licence'],
 };
 const ROUTES = routes.length ? routes : DEFAULT_ROUTES;
 
