@@ -227,7 +227,7 @@ export default function Projects() {
               { x: 144, w: 120, label: 'coder' },
               { x: 288, w: 120, label: 'reviewer' },
               { x: 432, w: 130, label: 'merge gate' },
-              { x: 586, w: 134, label: `${targetCount} targets` },
+              { x: 586, w: 133, label: `${targetCount} targets` },
             ]}
             annotations={[
               { x: 348, text: 'a different model' },

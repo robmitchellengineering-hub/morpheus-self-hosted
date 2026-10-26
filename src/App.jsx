@@ -11,6 +11,7 @@ import InsufficientCreditsModal from '@/components/matrix/InsufficientCreditsMod
 import RootErrorBoundary from '@/components/RootErrorBoundary';
 // Add page imports here
 import ProtectedRoute from '@/components/ProtectedRoute';
+import Licences from '@/pages/Licences';
 import MobileTabBar from '@/components/matrix/MobileTabBar';
 import Login from '@/pages/Login';
 import Register from '@/pages/Register';
@@ -175,6 +176,7 @@ function AnimatedRoutes() {
             <Route path="/architect" element={<Architect />} />
           <Route path="/portable-morpheus" element={<PortableMorpheusDownload />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/licences" element={<Licences />} />
             {/* Command Deck/Jarvis — 2026-09-17: opened up to every signed-in
                 account (Rob: "they dont see my command deck, they see their
                 own customisable command deck for their life"). The data
