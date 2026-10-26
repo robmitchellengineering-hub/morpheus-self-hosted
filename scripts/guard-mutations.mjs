@@ -4548,15 +4548,22 @@ export const MUTATIONS = [
     guard: 'verify-guard-count-copy.mjs',
     file: 'src/lib/morpheusCapabilities.json',
     why: 'Raises the published guard count above the real one, so the drift this guard exists to catch would read as accurate copy.',
-    find: '132 automated guards',
+    find: '133 automated guards',
     replace: '999 automated guards',
   },
   {
     guard: 'verify-guard-count-copy.mjs',
     file: 'src/pages/Projects.jsx',
     why: 'Raises the published mutation-test count above the real one, so the second drift this guard pins would pass un-noticed.',
-    find: '505 recorded mutation tests',
+    find: '506 recorded mutation tests',
     replace: '999 recorded mutation tests',
+  },
+  {
+    guard: 'verify-licence-issuance.mjs',
+    file: 'server/src/lib/licenceKey.js',
+    why: 'Signs an expiry in minutes instead of days, so a licence that claims a 30-day term dies the same hour — the guard asserts now+days and must catch it.',
+    find: 'exp: iat + Math.round(n * 86400),',
+    replace: 'exp: iat + Math.round(n * 60),',
   },
 ];
 
