@@ -1,0 +1,31 @@
+{
+  "note": "A random SAMPLE of published mutation proofs, re-executed. Same seed + same repo = same sample.",
+  "seed": 20261026,
+  "k": 3,
+  "of": 126,
+  "prover": "node scripts/mutate-guards.mjs",
+  "commit": "aea56cd1f967f9faa11e94bceddd15af3aa84809",
+  "at": "2026-10-26T20:29:48.635Z",
+  "sampled": [
+    {
+      "guard": "verify-deck-play.mjs",
+      "exit": 0,
+      "caught": 3,
+      "reproduced": true
+    },
+    {
+      "guard": "verify-ai-roles.mjs",
+      "exit": 0,
+      "caught": 1,
+      "reproduced": true
+    },
+    {
+      "guard": "verify-portable-platform.mjs",
+      "exit": 0,
+      "caught": 1,
+      "reproduced": true
+    }
+  ],
+  "reproduced": 3,
+  "failed": []
+}
