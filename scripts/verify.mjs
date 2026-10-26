@@ -18,6 +18,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 
 // Hard gates — any failure here fails the whole run.
 const HARD = [
+  'verify-licence-issuance.mjs',
   'verify-drift.mjs',
   'verify-ai-roles.mjs',
   'verify-review-context.mjs',
