@@ -61,5 +61,34 @@ for (const [name, args] of [["unknown plan", { accountId: "a", plan: "enterprise
   check(`rejects: ${name}`, threw, true);
 }
 
+// ── the DOOR ──────────────────────────────────────────────────────────────────────────────────────────
+// The signature half above proves a licence is well-formed. It says nothing about WHO may ask for one, and
+// that was the hole: the handler took its account from the session (right) and never asked whether the
+// caller was allowed to be issued one (wrong) - so any registered account could mint itself a 365-day team
+// licence.
+//
+// This imports lib/licencePolicy.js, NOT the handler: the handler reaches Prisma, and the guards job
+// installs nothing. That constraint (verify-guards-no-install) is what forced the rule out of the handler
+// and into a unit - a better shape, and the reason these cases can run at all.
+console.log("\nthe door — who may ask\n");
+{
+  const { assertCanIssue, ISSUE_DENIED_NOT_ADMIN } = await import("../server/src/lib/licencePolicy.js");
+  const verdict = (fn) => {
+    try {
+      fn();
+      return "allowed";
+    } catch (e) {
+      return `refused ${e.status}`;
+    }
+  };
+  check("a caller with no session is refused", verdict(() => assertCanIssue(null)), "refused 401");
+  check("an ordinary signed-in account is refused", verdict(() => assertCanIssue({ id: "u1", role: "user" })), "refused 403");
+  check("an admin is allowed", verdict(() => assertCanIssue({ id: "u1", role: "admin" })), "allowed");
+  // The message is part of the product: a buyer who hits this must be told where licences come from.
+  let msg = "";
+  try { assertCanIssue({ id: "u1", role: "user" }); } catch (e) { msg = e.message; }
+  check("the refusal says where to get one", msg === ISSUE_DENIED_NOT_ADMIN && /plan is bought/.test(msg), true);
+}
+
 console.log(failures === 0 ? "\nlicence issuance: every case behaves\n" : `\nlicence issuance: ${failures} case(s) wrong\n`);
 process.exit(failures === 0 ? 0 : 1);
