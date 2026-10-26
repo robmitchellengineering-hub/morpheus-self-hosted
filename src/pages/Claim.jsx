@@ -12,6 +12,9 @@ import { base44 } from '@/api/base44Client';
 // Signed out is the expected first state, not an error: a buyer who has never used Morpheus lands here straight
 // from Stripe. The page says so and offers the way in, preserving the session id across the round trip.
 
+// Shown on the page and published beside the tarball, so a buyer can compare rather than trust.
+const PKG_SHA256 = '644807837d60914f914fed41d8a6d212cce3317bfd35e5456aaaf5ef965a08d8';
+
 export default function Claim() {
   const [params] = useSearchParams();
   const sessionId = params.get('session_id') || params.get('sessionId') || '';
@@ -106,7 +109,26 @@ export default function Claim() {
             </div>
             <div className="mt-6 rounded-lg border border-slate-800 bg-slate-900/40 p-4">
               <p className="text-xs uppercase tracking-wide text-slate-500">Install it</p>
-              <pre className="mt-2 overflow-x-auto text-[11px] text-slate-300">npm install -g valiant-verification-sdk{'\n'}valiant licence &lt;the string above&gt;{'\n'}cd your-repo &amp;&amp; valiant verify</pre>
+              {/* The package is not on npm, so `npm install -g valiant-verification-sdk` would fail. The link and
+                  the checksum are the instructions: download, verify, install, then the licence from above. */}
+              <a
+                href="/downloads/valiant-verification-sdk-0.2.0.tgz"
+                className="text-sm text-indigo-300 underline hover:text-indigo-200"
+                download
+              >
+                valiant-verification-sdk-0.2.0.tgz
+              </a>
+              <span className="ml-2 text-[11px] text-slate-500">sha256 {PKG_SHA256.slice(0, 16)}…</span>
+              <pre className="mt-2 overflow-x-auto text-[11px] text-slate-300">
+                {'shasum -a 256 -c valiant-verification-sdk-0.2.0.tgz.sha256\n' +
+                 'npm install -g ./valiant-verification-sdk-0.2.0.tgz\n' +
+                 'valiant licence <the string above>\n' +
+                 'cd your-repo && valiant verify --corpus'}
+              </pre>
+              <p className="mt-2 text-[11px] text-slate-500">
+                <code>--corpus</code> runs the four shipped reference guards straight away, so the first run does
+                something even before you write any gates of your own.
+              </p>
             </div>
           </div>
         )}
