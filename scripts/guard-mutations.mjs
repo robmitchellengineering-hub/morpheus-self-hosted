@@ -4558,6 +4558,13 @@ export const MUTATIONS = [
     find: '505 recorded mutation tests',
     replace: '999 recorded mutation tests',
   },
+  {
+    guard: 'verify-licence-issuance.mjs',
+    file: 'server/src/lib/licenceKey.js',
+    why: 'Signs an expiry in minutes instead of days, so a licence that claims a 30-day term dies the same hour — the guard asserts now+days and must catch it.',
+    find: 'exp: iat + Math.round(n * 86400),',
+    replace: 'exp: iat + Math.round(n * 60),',
+  },
 ];
 
 // ── UNPROVEN GUARDS, COMING DOWN ────────────────────────────────────────────
@@ -4606,14 +4613,7 @@ export const NOT_YET_PROVEN = [
  *
  * 64 → 63 on 2026-10-08: `verify-seo.mjs` sat in the unproven pile while the thing it guards shipped a live
  * defect for eleven releases — `emit_schema()` nested the site's two JSON-LD nodes inside the page node's
- * array, so every page of every site emitted `[{…page…},[{…Organization…},{…WebSite…}]  {
-    guard: 'verify-licence-issuance.mjs',
-    file: 'server/src/lib/licenceKey.js',
-    why: 'Signs an expiry in minutes instead of days, so a licence that claims a 30-day term dies the same hour — the guard asserts now+days and must catch it.',
-    find: 'exp: iat + Math.round(n * 86400),',
-    replace: 'exp: iat + Math.round(n * 60),',
-  },
-]`. Its checks all
+ * array, so every page of every site emitted `[{…page…},[{…Organization…},{…WebSite…}]]`. Its checks all
  * passed on that shape, because they assert substrings and that the block parses, and a nested array does
  * both. It now also pins the node-list SHAPE, and the mutation added with it IS the old code, so the claim
  * is provable by a text edit.
