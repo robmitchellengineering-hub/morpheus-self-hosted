@@ -35,6 +35,11 @@ model Licence {
   revoked_at    DateTime?
   note          String?
 
+  // The Stripe checkout session that paid for this licence. Unique, so one purchase cannot mint twice, and
+  // it is the only thing the claim page needs: anyone holding the session id and a signed-in account gets
+  // THIS licence or nothing. Nullable because an admin-issued licence has no purchase behind it.
+  stripe_session_id String? @unique
+
   created_date  DateTime  @default(now())
 
   @@index([created_by_id])

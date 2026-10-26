@@ -1312,3 +1312,5 @@ CREATE UNIQUE INDEX "licences_jti_key" ON "licences"("jti");
 CREATE INDEX "licences_created_by_id_idx" ON "licences"("created_by_id");
 ALTER TABLE "licences" ADD CONSTRAINT "licences_created_by_id_fkey"
   FOREIGN KEY ("created_by_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+
