@@ -115,5 +115,24 @@ console.log("\nclaiming a paid checkout\n");
   check("…but NOT to another account", verdict({ session: paid, existing: { created_by_id: "u_other" }, user: me }), "refused 409");
 }
 
+// A returned licence must be the SAME licence, not a new one. buildClaims() mints a fresh jti and expiry, so
+// using it to return an existing row would hand the buyer a token that revoking the row does not touch.
+console.log("\nreturning an existing licence is the same licence\n");
+{
+  const { claimsFromRow, signLicence } = await import("../server/src/lib/licenceKey.js");
+  const row = { created_by_id: "u1", plan: "solo", seats: 2, kid: "vvs-2026-10", jti: "lic_fixed", issued_at: new Date(1700000000 * 1000), expires_at: new Date(1800000000 * 1000) };
+  const a = claimsFromRow(row);
+  const b = claimsFromRow(row);
+  check("claims are derived, not generated", a.jti, "lic_fixed");
+  check("…and derived twice is identical", JSON.stringify(a), JSON.stringify(b));
+  check("…expiry comes from the row", a.exp, 1800000000);
+  const tok = signLicence(a, (await import("node:crypto")).generateKeyPairSync("ed25519").privateKey.export({ type: "pkcs8", format: "pem" }));
+  const tok2 = signLicence(b, (await import("node:crypto")).generateKeyPairSync("ed25519").privateKey.export({ type: "pkcs8", format: "pem" }));
+  const payloadOf = (t) => JSON.parse(Buffer.from(t.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8"));
+  check("…the token carries the row's jti", payloadOf(tok).jti, "lic_fixed");
+  check("…and the row's expiry", payloadOf(tok).exp, 1800000000);
+  check("…two signatures of the same claims agree on payload", payloadOf(tok).jti === payloadOf(tok2).jti, true);
+}
+
 console.log(failures === 0 ? "\nlicence issuance: every case behaves\n" : `\nlicence issuance: ${failures} case(s) wrong\n`);
 process.exit(failures === 0 ? 0 : 1);

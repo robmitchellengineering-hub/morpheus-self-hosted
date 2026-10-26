@@ -65,3 +65,11 @@ export function claimDecision({ session, existing, user }) {
   }
   return { ok: true, action: 'mint' };
 }
+
+/** What a checkout package buys. One place, so the price list and the licence cannot drift. */
+export function licenceForPackage(pkg, seats) {
+  const n = Math.max(1, Number(seats) || 1);
+  if (pkg === 'sdk') return { plan: 'solo', seats: n };
+  if (pkg === 'sdk_ent') return { plan: 'team', seats: n };
+  return null; // corpus packages buy a feed, not a licence
+}
