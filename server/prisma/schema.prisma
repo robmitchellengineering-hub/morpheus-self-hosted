@@ -131,7 +131,9 @@ model User {
   admin_audit_logs          AdminAuditLog[]
   maintenance_tasks         MaintenanceTask[]
 
-  @@map("users")
+  
+  licences      Licence[]
+@@map("users")
 }
 
 model UserSettings {
