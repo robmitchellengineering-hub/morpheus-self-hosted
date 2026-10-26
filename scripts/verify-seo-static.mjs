@@ -226,7 +226,9 @@ if (generated) {
     check('…with the LIVE unproven baseline, not a typed number', verification.includes(String(UNPROVEN_BASELINE)));
     check('…and no unreplaced template token left in it',
       !verification.includes('__GUARD_COUNT__') && !verification.includes('__HAZARD_COUNT__')
-      && !verification.includes('__MUTATION_COUNT__') && !verification.includes('__UNPROVEN_BASELINE__'));
+      && !verification.includes('__MUTATION_COUNT__') && !verification.includes('__UNPROVEN_BASELINE__')
+      && !verification.includes('__AUDIT_DATE__'));
+    check('…carrying the trust badge, with its audit date filled', /Valiant Verification Certified/.test(verification) && !verification.includes('__AUDIT_DATE__'));
     check('…visible, with no hiding style anywhere in it', !/display\s*:\s*none|visibility\s*:\s*hidden/i.test(verification));
     check('…with a title and headline a reader and a crawler both see',
       /<title>[^<]*verification/i.test(verification) && verification.includes('unlocks code verification'));

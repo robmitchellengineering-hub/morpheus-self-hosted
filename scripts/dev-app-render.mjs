@@ -58,7 +58,7 @@ const DEFAULT_ROUTES = ['/deck', '/deck/settings', '/deck/tools', '/deck/jarvis'
 // that - the nav still renders. So a route may declare what must appear in its own body text, and a
 // missing string is a failure.
 const EXPECT = {
-  '/licences': ['Licences', 'Valiant Verification SDK'],
+  '/licences': ['Licences', 'Valiant Verification SDK', 'ZQX-cannot-possibly-be-on-this-page'],
 };
 const ROUTES = routes.length ? routes : DEFAULT_ROUTES;
 

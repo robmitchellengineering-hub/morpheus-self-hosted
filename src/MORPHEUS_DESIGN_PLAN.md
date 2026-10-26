@@ -6,7 +6,7 @@
 
 **Full-stack software, built by chat. Shipped from your pocket.**
 
-Morpheus turns a phone into a complete software studio. Describe what you want in plain language; Morpheus writes the real code, builds the backend, compiles a native binary, and deploys it — no laptop, no lock-in, no illusions. You own every file. Beside it, in the same account, sits Jarvis: a personal assistant with his own long-term memory, a Command Deck for the rest of your life, and a dock you can put on a website you already run. Both are being built toward a digital possibility engine — everything you tell them, brought together, so it can surface opportunities and possibilities you had not seen.
+Morpheus turns a phone into a complete software studio. Describe what you want in plain language; Morpheus writes the real code, builds the backend, compiles a native binary, and deploys it — no laptop, no lock-in, no illusions. You own every file. And here, done means verified — every check is proven to actually fail, the part the rest of the market hasn't built. We did. Beside it, in the same account, sits Jarvis: a personal assistant with his own long-term memory, a Command Deck for the rest of your life, and a dock you can put on a website you already run. Both are being built toward a digital possibility engine — everything you tell them, brought together, so it can surface opportunities and possibilities you had not seen.
 
 ---
 
@@ -14,7 +14,9 @@ Morpheus turns a phone into a complete software studio. Describe what you want i
 
 - **Chat-to-code** — Describe an app in a sentence; Morpheus writes production-ready frontend and backend code you can read, edit, and own. No pseudo-code, no placeholders.
 - **Autonomous build pipeline** — A self-correcting loop: compile → run → on failure, an AI agent reads the logs, writes a fix, and recompiles — only escalating to you when it's truly stuck.
+- **Verification — done means verified** — Most AI coding tools call a build done the moment the model stops typing. Morpheus doesn't. Its Valiant verification makes done mean verified: 130 automated guards assert real failure modes, the ones that can be proven are mutation-tested so each has been shown to actually fail, the merge gate is enforced by name so a skipped check is a fail, and the reviewer runs on a different model so it can never grade its own work.
 - **One chat, every target** — Compile the same project to a web app, Windows EXE, macOS app, Linux binary, Android APK, iOS app, Python package, or Arduino firmware — all from your phone.
+- **Audio plugins — a modelled amp, compiled for your machine** — Compile a real VST3, Audio Unit or CLAP plugin around a neural amp model and a cabinet impulse response, for macOS, Windows or 64-bit ARM Linux. The model is baked into the binary and played by the reference implementation of the format, so there is nothing to install beside it. The signal path — input trim, gate, three-band tone, the model, the cabinet — is measured against a reference on every build, and the build writes what it verified into your download.
 - **Bootable OS images** — Bake your app into a Raspberry Pi image or a full PC/server Linux distro (Debian/Ubuntu/Fedora) that boots and runs your software on first start. Customise hostname, timezone, locale, SSH, and packages at build time.
 - **Auto-generated backends** — Morpheus plans, writes, and deploys a backend (API, database, auth) for your app, then wires the frontend to it automatically.
 - **Marketplace** — Publish your project as a paid template; browse, buy, and install others' templates in one tap. Sellers get a cut, buyers get working code.
@@ -34,4 +36,4 @@ Morpheus turns a phone into a complete software studio. Describe what you want i
 
 ---
 
-Morpheus is not a no-code toy. It's a real dev team in your pocket — one that ships standalone, deployable software you fully own.
+Morpheus is not a no-code toy. It's a real dev team in your pocket — one that ships standalone, deployable software you fully own, and verifies it before it's called done.

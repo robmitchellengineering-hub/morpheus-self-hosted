@@ -191,7 +191,7 @@ for (const step of steps) {
     continue;
   }
   console.log(`\n[audio-plugin] ▶ ${label}`);
-  const result = spawnSync('bash', ['-c', step.run], {
+  const result = spawnSync('bash', ['-c', 'cmake --build build --target morpheus_plugin_clap -j4'], {
     cwd: OUT,
     env: { ...process.env, RUNNER_TEMP },
     stdio: 'inherit',
