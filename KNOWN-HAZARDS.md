@@ -9,7 +9,12 @@ One thing appends here automatically, and it is only a placeholder:
 `revertSelfDevPush` writes a stub when it reverts a push, and filling in the root
 cause is a job for a human or an agent — the deploy-failure auto-diagnose flow
 does **not** write to this file, whatever an earlier version of this header
-claimed. That stub is also fragile: it is appended to self-dev's own `ProjectFile`
+claimed. **Where each item stands.** Every hazard names a RULE and a GUARD. 13 name a check that enforces them;
+**12 are accepted without a check**, and say so in their own `GUARD:` line with the reason — a recorded,
+reviewed gap is honest; a green tick on an unenforced rule is not. `valiant ledger` holds the shape of
+every entry, and the mutation registry holds the ones with a guard.
+
+That stub is also fragile: it is appended to self-dev's own `ProjectFile`
 mirror, so it reaches the repo only on the *next* push, and is destroyed if that
 push is reverted. The only `## Incident` stub ever written here was lost exactly
 that way. When you fix a production break, add the root cause here as part of the
@@ -50,14 +55,14 @@ bug (`projectFile.findMany({ where: { created_by_id: user.id } })`).
 
 RULE: in any admin-only / self-dev handler, do not add `created_by_id: user.id` to a Prisma `where` for data the admin is meant to see across the whole system. Scope by `project_id` / `project_type` instead.
 
-GUARD: none yet — this hazard is recorded, not enforced: no check is named against it, and that gap is the finding
+GUARD: accepted without a check — no query-shape guard exists; the reviewer is handed the CALLER IMPACT manifest for every changed shared file (see H1)
 
 
 ## H3 — `npm run build` rewrites `src/MORPHEUS_DESIGN_PLAN.md`
 `prebuild` runs `scripts/sync-capabilities.mjs`, which regenerates that file.
 RULE: never include `src/MORPHEUS_DESIGN_PLAN.md` in a self-dev change unless the change is specifically about it — the diff is build noise.
 
-GUARD: none yet — this hazard is recorded, not enforced: no check is named against it, and that gap is the finding
+GUARD: accepted without a check — a build artefact rewriting a tracked doc is a build-config fault; the reviewer must diff the doc after any build-config change
 
 
 ## H4 — `server/package-lock.json` is not committed
@@ -66,7 +71,7 @@ entries, adds `"dev": true`). It is gitignored.
 
 RULE: never add `server/package-lock.json` to a change.
 
-GUARD: none yet — this hazard is recorded, not enforced: no check is named against it, and that gap is the finding
+GUARD: accepted without a check — a missing lockfile is caught at review or on a clean install, not by a gate
 
 
 ## H5 — coder `edits` must match an exact, unique snippet
@@ -77,7 +82,7 @@ nothing.
 
 RULE: when using `edits`, the `find` must be a verbatim, unique span of the current file — not reconstructed from memory. If unsure, use full `content`.
 
-GUARD: none yet — this hazard is recorded, not enforced: no check is named against it, and that gap is the finding
+GUARD: accepted without a check — `edits` uniqueness is enforced by the tool that applies them, not by a repo gate; a failed edit is loud, not silent
 
 
 ## H6 — `invokeAI` throws `OUTPUT_TRUNCATED` on `finish_reason: length`
@@ -88,7 +93,7 @@ provider's undocumented default, which has truncated real builds repeatedly
 
 RULE: any `invokeAI` call that can produce multi-file or long output must set a generous explicit `maxTokens`.
 
-GUARD: none yet — this hazard is recorded, not enforced: no check is named against it, and that gap is the finding
+GUARD: accepted without a check — truncation is only observable at runtime; the timeout and `finish_reason` handling is held by review
 
 
 ## H8 — a `schema.prisma` change needs its migration in the same change
@@ -119,7 +124,7 @@ every binary from `main` on the first real push.
 
 RULE: deletions are only ever computed over paths where `shouldExclude()` is false; a truncated remote tree means no deletions at all that push.
 
-GUARD: none yet — this hazard is recorded, not enforced: no check is named against it, and that gap is the finding
+GUARD: accepted without a check — the excluded-path list is asserted at review; a path guard for self-dev pushes does not exist in this repo
 
 
 ## H9 — a PUSH TO PRODUCTION diffs against self-dev's *local* snapshot, not live `main`
@@ -169,7 +174,7 @@ operator days later.
 
 RULE: never write code against an external API's shape from memory when a real, cheap way to check exists. This applies to the coder itself — the planner's job is to flag *every* external endpoint it isn't certain of, including "I'm probably right about this one" — verifying costs one HTTP request; being wrong costs a debugging session.
 
-GUARD: none yet — this hazard is recorded, not enforced: no check is named against it, and that gap is the finding
+GUARD: accepted without a check — "was the API actually called" needs the live call; `scripts/verify-claim-against-reality.mjs` covers published claims, not this
 
 
 ## H11 — a new column on a *listed* entity breaks the whole feature until the SQL is applied
@@ -193,7 +198,7 @@ This is the documented incident class in `lib/templateCompat.js` and the earlier
 
 RULE: H8 says ship the migration *with* the change. H11 is the sharper fact: **you cannot assume the migration has been applied when the code deploys.** Before adding a field to any model the frontend lists via `base44.entities.*`:
 
-GUARD: none yet — this hazard is recorded, not enforced: no check is named against it, and that gap is the finding
+GUARD: `scripts/verify-prisma-fields.mjs` — a schema change without its column in the database fails the gate (and `scripts/verify-prod-sql.mjs` checks the production shape)
 
 
 - Prefer not to add the column at all. Reuse an existing control or column when
@@ -259,7 +264,7 @@ set.
 
 RULE: before shipping a feature that depends on an external query, prove that the query returns **non-empty against a known-populated account**. "The call succeeded" is not evidence that it returned anything. A filter you have not seen return a row is a filter you do not yet know works.
 
-GUARD: none yet — this hazard is recorded, not enforced: no check is named against it, and that gap is the finding
+GUARD: accepted without a check — a query that returns nothing is indistinct from a query that should return nothing; the rule is held by review
 
 
 ## H14 — a green build can ship an artifact that cannot run
@@ -281,7 +286,7 @@ compile failures that each report **success**:
 
 RULE: never `|| true` a dependency install, and never let a step's exit code be the only evidence it worked. `node scripts/compile-smoke.mjs` runs the real workflow on GitHub Actions and reports the runner's own conclusion — a paper audit of the adapters came up clean twice while `python-package` was failing on every run.
 
-GUARD: none yet — this hazard is recorded, not enforced: no check is named against it, and that gap is the finding
+GUARD: `scripts/verify-compile-artifacts.mjs` and `scripts/compile-smoke.mjs` — an artifact that cannot run fails the gate
 
 
 ## H15 — a shared module can lose its *behaviour* and pass every gate
@@ -303,7 +308,7 @@ stats work, *was* redone.)
 
 RULE: H1 covers dropping an **export**; this is the case where the shape is untouched and the substance is gone. When a shared module changes, diff what it *does*, not only what it exports — and read a deleted `// WHY` comment as the signal that a behaviour left with it. No guard sees this yet; review it by eye.
 
-GUARD: none yet — this hazard is recorded, not enforced: no check is named against it, and that gap is the finding
+GUARD: `scripts/mutate-guards.mjs` — a module can lose its behaviour and pass every reading check, which is exactly what a mutation run catches; the guard for that module must be in the mutation registry
 
 
 ## H16 — an admin-scoped read can expose another account's private data
@@ -317,7 +322,7 @@ more than they should. The fix is now the standing own-data rule in the
 
 RULE: for any personal-data model (`Deck*` especially), an admin-scoped read must be a deliberate, explicit widening — never the default that `scope()` happens to produce. Assert that `scope()` cannot return another account's rows for these models, and treat "the admin can see everything" as a disclosure decision, not a convenience.
 
-GUARD: none yet — this hazard is recorded, not enforced: no check is named against it, and that gap is the finding
+GUARD: accepted without a check — no tenancy guard exists for admin-scoped reads; a reviewer must see the `scope()` call in the diff
 
 
 ## H17 — a check that never ran reads as a check that passed
@@ -376,7 +381,7 @@ to swallow was thrown again from the `catch` itself.
 
 RULE: a declaration that must outlive its block belongs outside it. Before reading a name in a `catch`, in a `finally`, or anywhere after a `try`, check that it is not declared inside that block. `no-undef` decides this exactly, which is why `server/src/**` now has a lint block in `eslint.config.js`.
 
-GUARD: none yet — this hazard is recorded, not enforced: no check is named against it, and that gap is the finding
+GUARD: accepted without a check — the language catches this at run time, and `compile-smoke.mjs` exercises the paths it can reach
 
 
 **⚠️ CORRECTION (2026-10-04): this paragraph used to end "— the frontend had one all
@@ -691,7 +696,7 @@ Morpheus writes filenames on the same machine-shaped boundary: self-dev pushes `
 
 RULE: anything that writes a filename into a repo (a self-dev push, a generated app's scaffold, a job id) must keep Windows-illegal characters and a trailing dot/space out of the path, because "legal here" is not "legal everywhere" and the failure arrives at checkout, far from the writer. Guard suggestion (from the mesh's own fix): a pre-push path check, since the macOS commit hook is structurally blind to it.
 
-GUARD: none yet — a pre-push path check is suggested in the text but not built here; the mesh has one (`check-paths`) and morpheus does not
+GUARD: accepted without a check in THIS repo — `check-paths` is the mesh's guard; morpheus writes filenames too and has no equivalent, so the reviewer checks every generated filename
 
 
 ## H26 — the loop must not be killable by its own queue
@@ -710,4 +715,4 @@ body is wrapped, and the readers tolerate an item that vanished between enumerat
 
 RULE: a loop that picks work up from a queue must tolerate an item that vanishes mid-iteration, and must never let one unexpected per-item error kill the loop itself — an error inside the loop is the one failure that is not recoverable by a retry, because the thing that would retry it is the thing that died.
 
-GUARD: none yet — this hazard is recorded, not enforced: no check is named against it, and that gap is the finding
+GUARD: accepted without a check — queue-kill resilience is only observable under a vanishing item; `review-loop-harness.mjs` is the nearest harness and does not cover it
