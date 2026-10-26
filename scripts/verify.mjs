@@ -150,6 +150,9 @@ const HARD = [
   'verify-site-uptime.mjs',
   'verify-guard-count-copy.mjs',
   'boot-smoke.mjs',
+  // G-08: a UI change is verified by LOOKING at it. Fails when the page does not show what
+  // was expected, and says cannot-check rather than passing when the model observed nothing.
+  'verify-ui-seen.mjs',
 ];
 
 const results = [];
