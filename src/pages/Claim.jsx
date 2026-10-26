@@ -12,6 +12,9 @@ import { base44 } from '@/api/base44Client';
 // Signed out is the expected first state, not an error: a buyer who has never used Morpheus lands here straight
 // from Stripe. The page says so and offers the way in, preserving the session id across the round trip.
 
+// Shown on the page and published beside the tarball, so a buyer can compare rather than trust.
+const PKG_SHA256 = '644807837d60914f914fed41d8a6d212cce3317bfd35e5456aaaf5ef965a08d8';
+
 export default function Claim() {
   const [params] = useSearchParams();
   const sessionId = params.get('session_id') || params.get('sessionId') || '';
@@ -29,12 +32,16 @@ export default function Claim() {
       try {
         const { data } = await base44.functions.invoke('claimLicence', { sessionId });
         if (cancelled) return;
-        setState({ status: 'ok', licence: data?.licence, plan: data?.plan, seats: data?.seats, already: data?.state === 'already-claimed' });
+        if (data?.state === 'feed') setState({ status: 'feed', feedUrl: data.feedUrl });
+        else setState({ status: 'ok', licence: data?.licence, plan: data?.plan, seats: data?.seats, already: data?.state === 'already-claimed' });
       } catch (e) {
         if (cancelled) return;
-        const status = e?.response?.status || e?.status;
-        if (status === 401) setState({ status: 'signed-out' });
-        else setState({ status: 'error', message: e?.message || 'That licence could not be issued.' });
+        const status = e?.response?.status || e?.status || e?.statusCode;
+        const text = String(e?.message || '');
+        // Three ways to be signed out: a status, a message, or the function's own 401 wording. The buyer
+        // arriving with no account is the EXPECTED first visitor here, so guessing wrong strands them.
+        if (status === 401 || /sign in/i.test(text)) setState({ status: 'signed-out' });
+        else setState({ status: 'error', message: text || 'That licence could not be issued.' });
       }
     })();
     return () => { cancelled = true; };
@@ -88,6 +95,29 @@ export default function Claim() {
           </div>
         )}
 
+        {state.status === 'feed' && (
+          <div className="mt-6 rounded-xl border border-slate-800 bg-slate-900/40 px-6 py-6">
+            <p className="text-slate-300 font-medium">Your corpus subscription</p>
+            <p className="mt-2 text-sm text-slate-500">
+              This one is a feed rather than a licence — it updates as new invariants are bought by real
+              incidents, which is what the subscription is for.
+            </p>
+            <pre className="mt-4 overflow-x-auto rounded-lg border border-slate-800 bg-black/60 p-4 text-[11px] text-emerald-300">
+              {`valiant corpus --update ${state.feedUrl}`}
+            </pre>
+            <div className="mt-3 flex flex-wrap gap-3">
+              <a href={state.feedUrl} className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:bg-slate-800" download>
+                Download the feed
+              </a>
+              <Link to="/deck" className="rounded-lg px-4 py-2 text-sm text-slate-400 hover:text-slate-200">Back to your workspace →</Link>
+            </div>
+            <p className="mt-3 text-[11px] text-slate-500">
+              The feed is signed with the issuer key, so a copy that was tampered with is refused before
+              anything is written. No licence is required to install it.
+            </p>
+          </div>
+        )}
+
         {state.status === 'ok' && (
           <div className="mt-6">
             <p className="text-sm text-slate-400">
@@ -103,7 +133,26 @@ export default function Claim() {
             </div>
             <div className="mt-6 rounded-lg border border-slate-800 bg-slate-900/40 p-4">
               <p className="text-xs uppercase tracking-wide text-slate-500">Install it</p>
-              <pre className="mt-2 overflow-x-auto text-[11px] text-slate-300">npm install -g valiant-verification-sdk{'\n'}valiant licence &lt;the string above&gt;{'\n'}cd your-repo &amp;&amp; valiant verify</pre>
+              {/* The package is not on npm, so `npm install -g valiant-verification-sdk` would fail. The link and
+                  the checksum are the instructions: download, verify, install, then the licence from above. */}
+              <a
+                href="/downloads/valiant-verification-sdk-0.2.0.tgz"
+                className="text-sm text-indigo-300 underline hover:text-indigo-200"
+                download
+              >
+                valiant-verification-sdk-0.2.0.tgz
+              </a>
+              <span className="ml-2 text-[11px] text-slate-500">sha256 {PKG_SHA256.slice(0, 16)}…</span>
+              <pre className="mt-2 overflow-x-auto text-[11px] text-slate-300">
+                {'shasum -a 256 -c valiant-verification-sdk-0.2.0.tgz.sha256\n' +
+                 'npm install -g ./valiant-verification-sdk-0.2.0.tgz\n' +
+                 'valiant licence <the string above>\n' +
+                 'cd your-repo && valiant verify --corpus'}
+              </pre>
+              <p className="mt-2 text-[11px] text-slate-500">
+                <code>--corpus</code> runs the four shipped reference guards straight away, so the first run does
+                something even before you write any gates of your own.
+              </p>
             </div>
           </div>
         )}

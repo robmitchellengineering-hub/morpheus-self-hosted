@@ -19,7 +19,10 @@
 import { prisma } from '../db.js';
 import { stripeFetch } from '../lib/stripe.js';
 import { buildClaims, claimsFromRow, signLicence } from '../lib/licenceKey.js';
-import { claimDecision, licenceForPackage } from '../lib/licencePolicy.js';
+import { claimDecision, licenceForPackage, feedForPackage } from '../lib/licencePolicy.js';
+
+// The published feed. Env override so a staging deployment can point at its own copy.
+const CORPUS_FEED_URL = process.env.VVS_CORPUS_FEED_URL || 'https://vvs.morpheus.nz/corpus/current.txt';
 
 export default async function handler({ user, body }) {
   const sessionId = String(body?.sessionId || '').trim();
@@ -48,14 +51,19 @@ export default async function handler({ user, body }) {
     return { licence: signLicence(claimsFromRow(existing)), plan: existing.plan, seats: existing.seats, state: 'already-claimed' };
   }
 
-  const bought = licenceForPackage(session?.metadata?.package, session?.metadata?.seats);
+  const pkg = session?.metadata?.package;
+  const bought = licenceForPackage(pkg, session?.metadata?.seats);
   if (!bought) {
-    // A corpus subscription is a feed, not a licence. Saying so is better than minting something the buyer
-    // did not purchase.
-    throw Object.assign(
-      new Error('That checkout is a corpus subscription, not an SDK licence. Install the feed with: valiant corpus --update <feed-url>'),
-      { status: 422 },
-    );
+    // A corpus subscription buys the FEED, and it must be delivered here rather than refused: the buyer is
+    // standing on the page they were redirected to after paying.
+    if (feedForPackage(pkg)) {
+      return {
+        state: 'feed',
+        feedUrl: CORPUS_FEED_URL,
+        note: 'Corpus subscription: install it with the command below. The feed is signed, so an unsigned copy cannot be substituted for it.',
+      };
+    }
+    throw Object.assign(new Error('That checkout is not a licence or a corpus subscription.'), { status: 422 });
   }
 
   // Sign BEFORE writing: no key means 503 and no row, so a licence that cannot be verified never looks issued.
