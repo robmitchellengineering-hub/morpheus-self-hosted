@@ -325,10 +325,34 @@ switch (command) {
     break;
   }
 
+  // Ask this deployment's own eyes a question. The prompt must name the JSON keys it wants back,
+  // because Gemini is asked for JSON (see server/src/lib/webResearch.js geminiVisionJson).
+  //   node scripts/morpheus.mjs vision --image https://…/shot.png "How many columns? JSON {columns:n}"
+  case 'vision': {
+    const imageUrls = [];
+    const words = [];
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--image' && args[i + 1]) { imageUrls.push(args[++i]); continue; }
+      if (args[i].startsWith('--image=')) { imageUrls.push(args[i].slice(8)); continue; }
+      words.push(args[i]);
+    }
+    const prompt = words.join(' ').trim();
+    if (!prompt) fail('usage: node scripts/morpheus.mjs vision --image <https url> "<prompt naming the JSON keys>"', 2);
+    if (!imageUrls.length) fail('at least one --image <https url> is required', 2);
+    const r = await call('operatorVision', { prompt, imageUrls }, { timeoutMs: TIMEOUT_MS.default });
+    if (!r.ok) {
+      console.error(`✗ operatorVision → HTTP ${r.status}${r.body?.error ? ': ' + r.body.error : ''}`);
+      process.exitCode = 1;
+      break;
+    }
+    console.log(JSON.stringify(r.body.answer ?? r.body, null, 2));
+    console.error(`(${r.body.model || '?'} · key: ${r.body.keySource || '?'} · ${r.body.images || 0} image(s))`);
+    break;
+  }
+
   case 'chat': {
     const message = args.join(' ').trim();
-    if (!message) fail('usage: node scripts/morpheus.mjs chat "<what to change>"', 2);
-    const result = await call('chatWithMorpheus', { message, mode: 'build' }, { stream: true, timeoutMs: TIMEOUT_MS.chat });
+    if (!message) fail('usage: node scripts/morpheus.mjs chat "<what to change>"', 2);    const result = await call('chatWithMorpheus', { message, mode: 'build' }, { stream: true, timeoutMs: TIMEOUT_MS.chat });
     if (!result.ok) {
       console.error(`✗ chatWithMorpheus → HTTP ${result.status}`);
       process.exitCode = 1;

@@ -80,6 +80,11 @@ export const OPERATOR_SCOPE_FUNCTIONS = [
   'getSelfDevFeatures',
   'getSelfDevDecisions',
   'getSelfDevRuns',
+  // The deployment's own eyes. Read-only, spends whichever key would already have paid for a
+  // vision call (the caller's own Gemini connection first, the platform fallback second), and
+  // returns what it saw — never a credential. It exists so a non-browser client can use the vision
+  // this deployment already pays for instead of minting a second integration for it.
+  'operatorVision',
 ];
 
 const OPERATOR_SCOPE_SET = new Set(OPERATOR_SCOPE_FUNCTIONS);
