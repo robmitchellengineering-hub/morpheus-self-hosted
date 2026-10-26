@@ -55,6 +55,12 @@ const routes = argv.filter((a) => a.startsWith('/'));
 // /licences rides the same signed-in harness as the rest: it is a page a signed-in account can reach, so
 // the render job screenshots it and the --vision pass can be asked whether it shows what it should.
 const DEFAULT_ROUTES = ['/deck', '/deck/settings', '/deck/tools', '/deck/jarvis', '/settings', '/licences', '/workspace'];
+// A route can render "fine" and still be the wrong page: an empty shell, a component that fell through to
+// a fallback, or a screen that lost its own subject. blank/boundary/fatal cannot see that - the nav still
+// renders. So a route may declare what must appear in its own body text, and a missing string is a failure.
+const EXPECT = {
+  '/licences': ['Licences', 'Valiant Verification SDK'],
+};
 const ROUTES = routes.length ? routes : DEFAULT_ROUTES;
 
 const log = (m) => console.log(`  ${m}`);
@@ -316,7 +322,8 @@ async function renderAll(token) {
         visionResult = shot ? await visionVerdict(shot.toString('base64'), route) : { ok: true, skipped: 'screenshot failed' };
       }
 
-      results.push({ route, landedOn, boundary, blank, bouncedToLogin, pageErrors, consoleErrors, fatal, navigationError, serverErrors, body, visionResult });
+      const missingExpected = (EXPECT[route] || []).filter((t) => !body.toLowerCase().includes(t.toLowerCase()));
+      results.push({ route, landedOn, boundary, blank, bouncedToLogin, pageErrors, consoleErrors, fatal, navigationError, serverErrors, body, visionResult, missingExpected });
       await context.close();
     }
   } finally {
@@ -391,6 +398,7 @@ for (const r of results) {
   if (r.fatal.length) problems.push(`uncaught: ${r.fatal[0].split('\n')[0]}`);
   if (r.blank) problems.push('the page rendered nothing');
   if (r.bouncedToLogin) problems.push('bounced to /login — the session was not accepted');
+  if (r.missingExpected?.length) problems.push(`the page does not show what it is: missing ${r.missingExpected.map((t) => `"${t}"`).join(', ')}`);
   // Deduped: one failing query seen by three components is one defect, not three. And the count is
   // printed, because "5 errors" and "1 error" are different amounts of wrong.
   const uniqueServerErrors = [...new Set(r.serverErrors)];
