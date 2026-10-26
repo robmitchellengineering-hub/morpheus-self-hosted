@@ -124,7 +124,6 @@
     "verify-task-models.mjs",
     "verify-traffic.mjs",
     "verify-ui-feedback.mjs",
-    "verify-ui-seen.mjs",
     "verify-usage-observability.mjs",
     "verify-user-manual.mjs",
     "verify-verifier-coverage.mjs",
