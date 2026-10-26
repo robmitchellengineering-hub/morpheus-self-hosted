@@ -134,5 +134,18 @@ console.log("\nreturning an existing licence is the same licence\n");
   check("…two signatures of the same claims agree on payload", payloadOf(tok).jti === payloadOf(tok2).jti, true);
 }
 
+// A corpus purchase must end in DELIVERY, not a 422 explaining what they did not buy. The first version
+// refused it politely; that is a dead end on the page a customer reaches immediately after paying.
+console.log("\ncorpus purchases are delivered, not refused\n");
+{
+  const { feedForPackage, licenceForPackage } = await import("../server/src/lib/licencePolicy.js");
+  check("sdk buys a licence", JSON.stringify(licenceForPackage("sdk", 3)), JSON.stringify({ plan: "solo", seats: 3 }));
+  check("sdk_ent buys a team licence", JSON.stringify(licenceForPackage("sdk_ent", 2)), JSON.stringify({ plan: "team", seats: 2 }));
+  check("corpus is NOT a licence", licenceForPackage("corpus", 1), null);
+  check("…it delivers the feed", JSON.stringify(feedForPackage("corpus")), JSON.stringify({ feed: "corpus" }));
+  check("…and so does corpus_ent", JSON.stringify(feedForPackage("corpus_ent")), JSON.stringify({ feed: "corpus" }));
+  check("an unknown package is neither", feedForPackage("nonsense"), null);
+}
+
 console.log(failures === 0 ? "\nlicence issuance: every case behaves\n" : `\nlicence issuance: ${failures} case(s) wrong\n`);
 process.exit(failures === 0 ? 0 : 1);

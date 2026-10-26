@@ -32,7 +32,8 @@ export default function Claim() {
       try {
         const { data } = await base44.functions.invoke('claimLicence', { sessionId });
         if (cancelled) return;
-        setState({ status: 'ok', licence: data?.licence, plan: data?.plan, seats: data?.seats, already: data?.state === 'already-claimed' });
+        if (data?.state === 'feed') setState({ status: 'feed', feedUrl: data.feedUrl });
+        else setState({ status: 'ok', licence: data?.licence, plan: data?.plan, seats: data?.seats, already: data?.state === 'already-claimed' });
       } catch (e) {
         if (cancelled) return;
         const status = e?.response?.status || e?.status || e?.statusCode;
@@ -90,6 +91,29 @@ export default function Claim() {
               Nothing was issued. If you were charged, send the receipt to{' '}
               <a className="underline" href="mailto:info@valiantmusic.com.au">info@valiantmusic.com.au</a> and we
               will sort it.
+            </p>
+          </div>
+        )}
+
+        {state.status === 'feed' && (
+          <div className="mt-6 rounded-xl border border-slate-800 bg-slate-900/40 px-6 py-6">
+            <p className="text-slate-300 font-medium">Your corpus subscription</p>
+            <p className="mt-2 text-sm text-slate-500">
+              This one is a feed rather than a licence — it updates as new invariants are bought by real
+              incidents, which is what the subscription is for.
+            </p>
+            <pre className="mt-4 overflow-x-auto rounded-lg border border-slate-800 bg-black/60 p-4 text-[11px] text-emerald-300">
+              {`valiant corpus --update ${state.feedUrl}`}
+            </pre>
+            <div className="mt-3 flex flex-wrap gap-3">
+              <a href={state.feedUrl} className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:bg-slate-800" download>
+                Download the feed
+              </a>
+              <Link to="/deck" className="rounded-lg px-4 py-2 text-sm text-slate-400 hover:text-slate-200">Back to your workspace →</Link>
+            </div>
+            <p className="mt-3 text-[11px] text-slate-500">
+              The feed is signed with the issuer key, so a copy that was tampered with is refused before
+              anything is written. No licence is required to install it.
             </p>
           </div>
         )}

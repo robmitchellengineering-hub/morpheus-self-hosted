@@ -73,3 +73,14 @@ export function licenceForPackage(pkg, seats) {
   if (pkg === 'sdk_ent') return { plan: 'team', seats: n };
   return null; // corpus packages buy a feed, not a licence
 }
+
+/**
+ * What a corpus purchase actually buys: the signed feed, not a licence.
+ *
+ * WHY THIS IS A FUNCTION AND NOT A THROW. The first version refused corpus checkouts with a 422 explaining the
+ * difference. Correct, and useless to the buyer who just paid: they landed on a licence page, were told they had
+ * not bought a licence, and given a command with a placeholder URL. A purchase must end in delivery.
+ */
+export function feedForPackage(pkg) {
+  return pkg === 'corpus' || pkg === 'corpus_ent' ? { feed: 'corpus' } : null;
+}
