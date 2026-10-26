@@ -210,7 +210,12 @@ for (const r of results) {
 if (shard && !filters.length && !onlyNeedsInstall) {
   const rows = results.map((r) => ({
     guard: r.m.guard,
-    mutation: r.m.name,
+    mutation: r.m.name ?? null,
+    file: r.m.file,
+    // The identity of a mutation is its SITE, not its guard: several mutations belong to one guard
+    // (verify-audio-plugin has many), and `name` is absent on older entries. A hash of the exact
+    // find/replace pair is stable across machines and cannot collide by accident.
+    site: createHash('sha1').update(`${r.m.file}\u0000${r.m.find}\u0000${r.m.replace}`).digest('hex').slice(0, 12),
     verdict: r.verdict,
     result: r.verdict === 'caught' ? 'red' : r.verdict === 'NEEDS INSTALL' ? 'not-run' : 'green',
   }));
@@ -227,8 +232,9 @@ if (shard && !filters.length && !onlyNeedsInstall) {
 } else if (!filters.length && !onlyNeedsInstall) {
   const proofs = results.map((r) => ({
     guard: r.m.guard,
-    mutation: r.m.name,
+    mutation: r.m.name ?? null,
     file: r.m.file,
+    site: createHash('sha1').update(`${r.m.file}\u0000${r.m.find}\u0000${r.m.replace}`).digest('hex').slice(0, 12),
     verdict: r.verdict,
     result: r.verdict === 'caught' ? 'red' : r.verdict === 'NEEDS INSTALL' ? 'not-run' : 'green',
     provedBy: 'scripts/mutate-guards.mjs',
