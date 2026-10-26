@@ -13,11 +13,12 @@
 // else's licences (the list route is scoped the same way).
 import { prisma } from '../db.js';
 import { buildClaims, signLicence, PLANS } from '../lib/licenceKey.js';
+import { assertCanIssue } from '../lib/licencePolicy.js';
 
 export default async function handler({ user, body }) {
-  if (!user?.id) {
-    throw Object.assign(new Error('Sign in to issue a licence.'), { status: 401 });
-  }
+  // The rule lives in lib/licencePolicy.js so it can be proven in the guards job, which installs nothing.
+  // Importing THIS file pulls in Prisma; importing the policy does not.
+  assertCanIssue(user);
 
   const plan = body?.plan ?? 'solo';
   const days = body?.days ?? 365;
