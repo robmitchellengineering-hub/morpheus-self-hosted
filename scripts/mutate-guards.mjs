@@ -203,8 +203,28 @@ for (const r of results) {
 // evidence anyone else can read, so the run writes them down: one row per mutation, with the verdict
 // the guard actually produced. Written only on a full run — a filtered run covers a subset, and
 // writing it would delete every other guard's proof.
-// A shard is a subset too: writing on --shard=0/n would publish one shard's proof as the whole set.
-if (!filters.length && !shard && !onlyNeedsInstall) {
+// A FILTERED run is a subset and must never write the evidence file. A SHARD is also a subset, but a
+// legitimate one: it writes its own file, which `tools/merge-shards.mjs` refuses to merge unless every
+// shard is present, on one commit, covering the whole registry. One shard can never masquerade as the
+// whole set because the filename says which shard it is.
+if (shard && !filters.length && !onlyNeedsInstall) {
+  const rows = results.map((r) => ({
+    guard: r.m.guard,
+    mutation: r.m.name,
+    verdict: r.verdict,
+    result: r.verdict === 'caught' ? 'red' : r.verdict === 'NEEDS INSTALL' ? 'not-run' : 'green',
+  }));
+  const dest = resolve(ROOT, `mutations.shard-${shard.i}-of-${shard.n}.json`);
+  writeFileSync(dest, `${JSON.stringify({
+    note: 'A SHARD — not evidence on its own. Merge with tools/merge-shards.mjs, which refuses a missing shard, a different commit, or a set that does not cover the registry.',
+    shard: { i: shard.i, n: shard.n },
+    commit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim(),
+    host: `${process.platform}-${process.arch}`,
+    generatedAt: new Date().toISOString(),
+    proofs: rows,
+  }, null, 2)}\n`);
+  console.log(`shard ${shard.i}/${shard.n}: wrote ${dest.split('/').pop()} — ${rows.length} mutation(s), ${rows.filter((r) => r.result === 'red').length} red`);
+} else if (!filters.length && !onlyNeedsInstall) {
   const proofs = results.map((r) => ({
     guard: r.m.guard,
     mutation: r.m.name,
