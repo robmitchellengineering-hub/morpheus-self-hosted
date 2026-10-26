@@ -90,5 +90,49 @@ console.log("\nthe door — who may ask\n");
   check("the refusal says where to get one", msg === ISSUE_DENIED_NOT_ADMIN && /plan is bought/.test(msg), true);
 }
 
+// ── claiming a paid checkout (U-11) ─────────────────────────────────────────────────────────────────────
+// The secure link after checkout carries a Stripe session id. These cases are the rules that decide what it
+// may produce, and the one that matters most is the last: a leaked session URL must not read someone else's
+// licence.
+console.log("\nclaiming a paid checkout\n");
+{
+  const { claimDecision } = await import("../server/src/lib/licencePolicy.js");
+  const verdict = (args) => {
+    try {
+      const r = claimDecision(args);
+      return r.ok ? `ok:${r.action}` : `refused ${r.status}`;
+    } catch (e) {
+      return `threw ${e.message.slice(0, 20)}`;
+    }
+  };
+  const paid = { payment_status: "paid", status: "complete", metadata: { package: "sdk" } };
+  const me = { id: "u_me" };
+  check("no session -> signed-in account required", verdict({ session: paid, existing: null, user: null }), "refused 401");
+  check("unknown session is refused", verdict({ session: null, existing: null, user: me }), "refused 404");
+  check("an unpaid session mints nothing", verdict({ session: { payment_status: "unpaid", status: "open" }, existing: null, user: me }), "refused 402");
+  check("a paid session mints a licence", verdict({ session: paid, existing: null, user: me }), "ok:mint");
+  check("the same session returns its licence to its owner", verdict({ session: paid, existing: { created_by_id: "u_me" }, user: me }), "ok:return");
+  check("…but NOT to another account", verdict({ session: paid, existing: { created_by_id: "u_other" }, user: me }), "refused 409");
+}
+
+// A returned licence must be the SAME licence, not a new one. buildClaims() mints a fresh jti and expiry, so
+// using it to return an existing row would hand the buyer a token that revoking the row does not touch.
+console.log("\nreturning an existing licence is the same licence\n");
+{
+  const { claimsFromRow, signLicence } = await import("../server/src/lib/licenceKey.js");
+  const row = { created_by_id: "u1", plan: "solo", seats: 2, kid: "vvs-2026-10", jti: "lic_fixed", issued_at: new Date(1700000000 * 1000), expires_at: new Date(1800000000 * 1000) };
+  const a = claimsFromRow(row);
+  const b = claimsFromRow(row);
+  check("claims are derived, not generated", a.jti, "lic_fixed");
+  check("…and derived twice is identical", JSON.stringify(a), JSON.stringify(b));
+  check("…expiry comes from the row", a.exp, 1800000000);
+  const tok = signLicence(a, (await import("node:crypto")).generateKeyPairSync("ed25519").privateKey.export({ type: "pkcs8", format: "pem" }));
+  const tok2 = signLicence(b, (await import("node:crypto")).generateKeyPairSync("ed25519").privateKey.export({ type: "pkcs8", format: "pem" }));
+  const payloadOf = (t) => JSON.parse(Buffer.from(t.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8"));
+  check("…the token carries the row's jti", payloadOf(tok).jti, "lic_fixed");
+  check("…and the row's expiry", payloadOf(tok).exp, 1800000000);
+  check("…two signatures of the same claims agree on payload", payloadOf(tok).jti === payloadOf(tok2).jti, true);
+}
+
 console.log(failures === 0 ? "\nlicence issuance: every case behaves\n" : `\nlicence issuance: ${failures} case(s) wrong\n`);
 process.exit(failures === 0 ? 0 : 1);

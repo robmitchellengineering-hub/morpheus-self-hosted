@@ -49,3 +49,24 @@ export function signLicence(claims, privateKeyPem = process.env.VVS_ISSUER_KEY_P
   const sig = sign(null, Buffer.from(payloadPart.replace(/-/g, "+").replace(/_/g, "/"), "base64"), key);
   return `vvs1.${payloadPart}.${b64url(sig)}`;
 }
+
+/**
+ * Rebuild the exact claims a stored Licence row represents, so its token can be re-derived on demand.
+ *
+ * WHY THIS EXISTS. `buildClaims()` MINTS a new jti and a new expiry — correct when issuing, catastrophic when
+ * returning an existing licence, because the caller would receive a token that does not match the row it is
+ * recorded against (a new jti that revoking the row would not touch). Found by reading the signature instead
+ * of assuming it: buildClaims ignores jti/iat/exp entirely.
+ */
+export function claimsFromRow(row) {
+  return {
+    v: 1,
+    sub: row.created_by_id,
+    plan: row.plan,
+    seats: row.seats,
+    iat: Math.floor(new Date(row.issued_at).getTime() / 1000),
+    exp: Math.floor(new Date(row.expires_at).getTime() / 1000),
+    kid: row.kid,
+    jti: row.jti,
+  };
+}
