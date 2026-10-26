@@ -339,7 +339,7 @@ export default function Projects() {
 
           <h3>The results, measured</h3>
           <div className="finding"><b><span className="stat">133 automated guards</span></b> — each asserts a real
-          failure mode, and each is proven to fail: <span className="stat">505 recorded mutation tests</span> inject
+          failure mode, and each is proven to fail: <span className="stat">506 recorded mutation tests</span> inject
           a seeded fault and confirm the guard goes red. The unproven backlog has been ratcheted from 44 to{' '}
           <span className="stat">5</span>.</div>
           <div className="finding"><b><span className="stat">26 documented breakages</span></b> — every self-inflicted

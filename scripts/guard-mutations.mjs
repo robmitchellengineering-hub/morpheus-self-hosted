@@ -4555,7 +4555,7 @@ export const MUTATIONS = [
     guard: 'verify-guard-count-copy.mjs',
     file: 'src/pages/Projects.jsx',
     why: 'Raises the published mutation-test count above the real one, so the second drift this guard pins would pass un-noticed.',
-    find: '505 recorded mutation tests',
+    find: '506 recorded mutation tests',
     replace: '999 recorded mutation tests',
   },
   {
