@@ -13,27 +13,12 @@
 // else's licences (the list route is scoped the same way).
 import { prisma } from '../db.js';
 import { buildClaims, signLicence, PLANS } from '../lib/licenceKey.js';
+import { assertCanIssue } from '../lib/licencePolicy.js';
 
 export default async function handler({ user, body }) {
-  if (!user?.id) {
-    throw Object.assign(new Error('Sign in to issue a licence.'), { status: 401 });
-  }
-
-  // ADMIN ONLY, and this was wrong for one commit rather than for long: the function shipped taking its
-  // account from the session — which is right — but nothing stopped ANY signed-in account from being the
-  // one it issued to. Free registration plus a 365-day `team` default is a paid product given away, and
-  // the only thing standing between the two was that nobody had looked.
-  //
-  // The plan/seat path that actually sells licences (payment -> issue) is not wired yet, so this is
-  // deliberately the narrow door: an admin issues for an account. When payment exists, the webhook calls
-  // this same function with the same claims; the check below becomes "admin OR verified payment reference"
-  // and that is one condition to widen, not a rewrite.
-  if (user.role !== 'admin') {
-    throw Object.assign(
-      new Error('Only an admin can issue a licence. Licences are issued to your own account when a plan is bought.'),
-      { status: 403 },
-    );
-  }
+  // The rule lives in lib/licencePolicy.js so it can be proven in the guards job, which installs nothing.
+  // Importing THIS file pulls in Prisma; importing the policy does not.
+  assertCanIssue(user);
 
   const plan = body?.plan ?? 'solo';
   const days = body?.days ?? 365;
