@@ -4548,7 +4548,7 @@ export const MUTATIONS = [
     guard: 'verify-guard-count-copy.mjs',
     file: 'src/lib/morpheusCapabilities.json',
     why: 'Raises the published guard count above the real one, so the drift this guard exists to catch would read as accurate copy.',
-    find: '132 automated guards',
+    find: '133 automated guards',
     replace: '999 automated guards',
   },
   {
