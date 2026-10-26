@@ -211,6 +211,10 @@ if (shard && !filters.length && !onlyNeedsInstall) {
     guard: r.m.guard,
     mutation: r.m.name ?? null,
     file: r.m.file,
+    // The recipe the SDK re-runs: apply find/replace to `file`, then run the guard; it must go pass -> fail.
+    find: r.m.find,
+    replace: r.m.replace,
+    check: ['node', `scripts/${r.m.guard}`],
     // Identity is the mutation SITE, not the guard: one guard carries many mutations (verify-audio-plugin
     // has dozens) and older entries have no `name`, so (guard, mutation) collides with itself across shards.
     site: createHash('sha1').update(`${r.m.file}\u0000${r.m.find}\u0000${r.m.replace}`).digest('hex').slice(0, 12),
@@ -232,6 +236,9 @@ if (shard && !filters.length && !onlyNeedsInstall) {
     guard: r.m.guard,
     mutation: r.m.name ?? null,
     file: r.m.file,
+    find: r.m.find,
+    replace: r.m.replace,
+    check: ['node', `scripts/${r.m.guard}`],
     // Identity is the mutation SITE, not the guard: one guard carries many mutations (verify-audio-plugin
     // has dozens) and older entries have no `name`, so (guard, mutation) collides with itself across shards.
     site: createHash('sha1').update(`${r.m.file}\u0000${r.m.find}\u0000${r.m.replace}`).digest('hex').slice(0, 12),
