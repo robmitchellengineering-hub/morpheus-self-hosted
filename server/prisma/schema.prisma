@@ -21,6 +21,26 @@ datasource db {
 
 // ── USERS & SETTINGS ─────────────────────────────────────────────
 
+model Licence {
+  id            String    @id @default(uuid())
+  created_by_id String
+  user          User      @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+
+  jti           String    @unique
+  plan          String
+  seats         Int       @default(1)
+  kid           String
+  issued_at     DateTime  @default(now())
+  expires_at    DateTime
+  revoked_at    DateTime?
+  note          String?
+
+  created_date  DateTime  @default(now())
+
+  @@index([created_by_id])
+  @@map("licences")
+}
+
 model User {
   id            String   @id @default(uuid())
   email         String   @unique
@@ -111,7 +131,9 @@ model User {
   admin_audit_logs          AdminAuditLog[]
   maintenance_tasks         MaintenanceTask[]
 
-  @@map("users")
+  
+  licences      Licence[]
+@@map("users")
 }
 
 model UserSettings {

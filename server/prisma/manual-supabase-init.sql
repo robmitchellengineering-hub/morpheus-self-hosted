@@ -1293,3 +1293,22 @@ ALTER TABLE "deck_life_files" ADD CONSTRAINT "deck_life_files_created_by_id_fkey
 ALTER TABLE "site_uptime_checks" ADD CONSTRAINT "site_uptime_checks_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 ALTER TABLE "site_uptime_checks" ADD CONSTRAINT "site_uptime_checks_created_by_id_fkey" FOREIGN KEY ("created_by_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+CREATE TABLE "licences" (
+    "id" text NOT NULL,
+    "created_by_id" text NOT NULL,
+    "jti" text NOT NULL,
+    "plan" text NOT NULL,
+    "seats" integer NOT NULL DEFAULT 1,
+    "kid" text NOT NULL,
+    "issued_at" timestamptz NOT NULL DEFAULT now(),
+    "expires_at" timestamptz NOT NULL,
+    "revoked_at" timestamptz,
+    "note" text,
+    "created_date" timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT "licences_pkey" PRIMARY KEY ("id")
+);
+CREATE UNIQUE INDEX "licences_jti_key" ON "licences"("jti");
+CREATE INDEX "licences_created_by_id_idx" ON "licences"("created_by_id");
+ALTER TABLE "licences" ADD CONSTRAINT "licences_created_by_id_fkey"
+  FOREIGN KEY ("created_by_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
