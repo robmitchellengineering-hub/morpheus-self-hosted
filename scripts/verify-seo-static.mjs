@@ -211,11 +211,6 @@ if (generated) {
   check('the landing page links to it visibly, with a real <a> (it is not an SPA route)',
     landingForManualLink.includes('href="/manual"'));
 
-  check('the open specification file exists and is substantive',
-    existsSync(join(ROOT, 'public', 'verification-spec.md'))
-    && readFileSync(join(ROOT, 'public', 'verification-spec.md'), 'utf8').length > 1000);
-  check('the investor brief PDF is published',
-    existsSync(join(ROOT, 'public', 'verification-gap-investor.pdf')));
   // The verification page was RETIRED (2026-10-25): it now lives under VVS. The old URL redirects
   // there, and the page must no longer be advertised as morpheus.nz's own content.
   const verRedirects = readFileSync(join(ROOT, 'public/_redirects'), 'utf8');
