@@ -15,6 +15,8 @@
 import crypto from 'node:crypto';
 import { prisma } from '../db.js';
 import { computeSplit } from '../lib/stripe.js';
+import { licenceForEvent } from '../lib/valiantLicence.js';
+import { sendMail } from '../lib/mailer.js';
 
 function verifyStripeSignature(rawBody, signature, secret) {
   const parts = String(signature || '').split(',').reduce((acc, p) => {
@@ -44,6 +46,31 @@ function verifyStripeSignature(rawBody, signature, secret) {
   return JSON.parse(rawBody);
 }
 
+/**
+ * Mint the licence for a verified event and mail it to the customer. Never throws: a mail failure must not make Stripe
+ * retry a webhook that has already recorded the subscription, and a missing key must be loud in the log, not silent.
+ */
+async function issueLicence(event, { reason, to = null } = {}) {
+  const keyPem = process.env.VALIANT_ISSUER_KEY || null;
+  const r = licenceForEvent(event, { keyPem, to });
+  if (!r.minted) {
+    console.error(`valiant licence not minted (${reason}, ${event.type}): ${r.why}`);
+    return r;
+  }
+  console.log(`valiant licence minted (${reason}): jti=${r.claims.jti} seats=${r.claims.seats} exp=${new Date(r.claims.exp * 1000).toISOString().slice(0, 10)}`);
+  if (!r.mail?.ok) {
+    console.error(`valiant licence NOT delivered (${reason}): ${r.mail?.why}`);
+    return r;
+  }
+  try {
+    const sent = await sendMail(r.mail.mail);
+    if (!sent?.sent) console.log(`valiant licence mail (${reason}) not sent over SMTP — see [mailer] above for the body`);
+  } catch (e) {
+    console.error(`valiant licence mail failed (${reason}): ${e.message}`);
+  }
+  return r;
+}
+
 export default async function handler({ req, res }) {
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
   if (!webhookSecret) {
@@ -69,6 +96,20 @@ export default async function handler({ req, res }) {
   // fires once, at purchase; seat changes and cancellation arrive as these
   // events on the same subscription. Rows are matched by Stripe subscription
   // id, so a subscription this system does not know about is a no-op.
+  // THE LICENCE LIVES ON BILLING EVENTS, NOT ON THE CHECKOUT. A 7-day licence is renewed by every paid invoice and by
+  // nothing else: stop paying, no renewal is minted, and the SDK refuses inside a week. Deliberately placed before the
+  // checkout branch so a renewal is handled whatever else the event carries.
+  if (event.type === 'invoice.paid' || event.type === 'invoice.payment_succeeded') {
+    await issueLicence(event, { reason: 'renewal' });
+    return { received: true, licence: 'renewed' };
+  }
+  if (event.type === 'invoice.payment_failed' || event.type === 'customer.subscription.paused') {
+    // NOT PAID: mint nothing, and say so in the log so an operator can see the subscription slipping before the licence
+    // runs out. The row is still updated below so the registry shows past_due.
+    const notice = licenceForEvent(event, { keyPem: null });
+    console.log(`valiant licence NOT renewed (${event.type}): ${notice.why}`);
+  }
+
   if (event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') {
     const sub = event.data?.object || {};
     const seats = Number(sub.items?.data?.[0]?.quantity) || 1;
@@ -199,6 +240,8 @@ export default async function handler({ req, res }) {
         },
       });
       console.log(`VDS subscription recorded: sub=${subId} package=${pkg} seats=${seats}`);
+      // The first licence, on the purchase itself: the customer should not have to wait for the next invoice.
+      await issueLicence(event, { reason: 'first', to: session.customer_details?.email || null });
     } catch (e) {
       console.error('stripeWebhook: VerificationSubscription upsert failed:', e.message);
     }
