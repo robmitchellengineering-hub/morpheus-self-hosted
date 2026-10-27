@@ -1,0 +1,4 @@
+{
+  "what": "YOUR SOPs. They may add to the baseline and may carry their own checks. A rule here may not shadow, disable or weaken a baseline rule — the gate refuses that by name. A rule with no check is allowed and counted as accepted-unenforced on every run.",
+  "rules": []
+}

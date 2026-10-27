@@ -1,0 +1,151 @@
+#!/usr/bin/env node
+// verify-licence-issuance.mjs — the issuer's half, proven against ITS OWN key.
+//
+// The trap this exists to avoid: a test that mints with a test key and verifies against the SHIPPED
+// public key passes only when the two happen to be the same, and fails in production where they are
+// not. So every case here generates a fresh pair, signs with the private half and verifies with THAT
+// pair's public half — and one case asserts that the shipped key does NOT accept it, which is what
+// makes the first assertions mean something.
+import { generateKeyPairSync, verify as cryptoVerify } from "node:crypto";
+import { buildClaims, signLicence, PLANS } from "../server/src/lib/licenceKey.js";
+
+let failures = 0;
+const check = (name, actual, expected) => {
+  const ok = actual === expected;
+  if (!ok) failures++;
+  console.log(`  ${ok ? "PASS" : "FAIL"}  ${name}${ok ? "" : ` (got ${JSON.stringify(actual)})`}`);
+};
+
+const b64 = (s) => Buffer.from(s.replace(/-/g, "+").replace(/_/g, "/"), "base64");
+function decode(licence) {
+  const [pre, payload, sig] = licence.split(".");
+  return { pre, payload, sig, claims: JSON.parse(b64(payload).toString("utf8")), sigBuf: b64(sig) };
+}
+function verifiesWith(licence, publicKey) {
+  const { payload, sigBuf } = decode(licence);
+  return cryptoVerify(null, b64(payload), publicKey, sigBuf);
+}
+
+console.log("\nlicence issuance — the issuer's half\n");
+const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+const pem = privateKey.export({ type: "pkcs8", format: "pem" });
+const pub = publicKey; // already a KeyObject; verify() takes it directly
+
+const claims = buildClaims({ accountId: "acct_test_001", plan: "team", seats: 3, days: 30 });
+check("claims carry the SDK's version", claims.v, 1);
+check("plan and seats survive", `${claims.plan}/${claims.seats}`, "team/3");
+check("expiry is now + days", Math.round((claims.exp - claims.iat) / 86400), 30);
+check("jti is unique per call", buildClaims({ accountId: "a", plan: "solo", days: 1 }).jti === claims.jti, false);
+
+const token = signLicence(claims, pem);
+const decoded = decode(token);
+check("token has the vvs1 shape", decoded.pre, "vvs1");
+check("the claims round-trip", decoded.claims.jti, claims.jti);
+check("IT VERIFIES WITH ITS OWN KEY", verifiesWith(token, pub), true);
+check("…and NOT with a different key", verifiesWith(token, generateKeyPairSync("ed25519").publicKey), false);
+
+// A tampered payload must stop verifying — the whole point of the signature.
+const edited = decoded.claims; edited.seats = 999;
+const forged = `vvs1.${Buffer.from(JSON.stringify(edited)).toString("base64").replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"")}.${decoded.sig}`;
+check("editing the seats breaks the signature", verifiesWith(forged, pub), false);
+
+// Absent key is a refusal, never a fallback.
+let refused = false;
+try { signLicence(claims, ""); } catch (e) { refused = e.status === 503; }
+check("no key -> refuse with 503, not a throwaway key", refused, true);
+
+// Bad input is rejected before signing.
+for (const [name, args] of [["unknown plan", { accountId: "a", plan: "enterprise", days: 1 }], ["no account", { plan: "solo", days: 1 }], ["zero days", { accountId: "a", plan: "solo", days: 0 }]]) {
+  let threw = false;
+  try { buildClaims(args); } catch { threw = true; }
+  check(`rejects: ${name}`, threw, true);
+}
+
+// ── the DOOR ──────────────────────────────────────────────────────────────────────────────────────────
+// The signature half above proves a licence is well-formed. It says nothing about WHO may ask for one, and
+// that was the hole: the handler took its account from the session (right) and never asked whether the
+// caller was allowed to be issued one (wrong) - so any registered account could mint itself a 365-day team
+// licence.
+//
+// This imports lib/licencePolicy.js, NOT the handler: the handler reaches Prisma, and the guards job
+// installs nothing. That constraint (verify-guards-no-install) is what forced the rule out of the handler
+// and into a unit - a better shape, and the reason these cases can run at all.
+console.log("\nthe door — who may ask\n");
+{
+  const { assertCanIssue, ISSUE_DENIED_NOT_ADMIN } = await import("../server/src/lib/licencePolicy.js");
+  const verdict = (fn) => {
+    try {
+      fn();
+      return "allowed";
+    } catch (e) {
+      return `refused ${e.status}`;
+    }
+  };
+  check("a caller with no session is refused", verdict(() => assertCanIssue(null)), "refused 401");
+  check("an ordinary signed-in account is refused", verdict(() => assertCanIssue({ id: "u1", role: "user" })), "refused 403");
+  check("an admin is allowed", verdict(() => assertCanIssue({ id: "u1", role: "admin" })), "allowed");
+  // The message is part of the product: a buyer who hits this must be told where licences come from.
+  let msg = "";
+  try { assertCanIssue({ id: "u1", role: "user" }); } catch (e) { msg = e.message; }
+  check("the refusal says where to get one", msg === ISSUE_DENIED_NOT_ADMIN && /plan is bought/.test(msg), true);
+}
+
+// ── claiming a paid checkout (U-11) ─────────────────────────────────────────────────────────────────────
+// The secure link after checkout carries a Stripe session id. These cases are the rules that decide what it
+// may produce, and the one that matters most is the last: a leaked session URL must not read someone else's
+// licence.
+console.log("\nclaiming a paid checkout\n");
+{
+  const { claimDecision } = await import("../server/src/lib/licencePolicy.js");
+  const verdict = (args) => {
+    try {
+      const r = claimDecision(args);
+      return r.ok ? `ok:${r.action}` : `refused ${r.status}`;
+    } catch (e) {
+      return `threw ${e.message.slice(0, 20)}`;
+    }
+  };
+  const paid = { payment_status: "paid", status: "complete", metadata: { package: "sdk" } };
+  const me = { id: "u_me" };
+  check("no session -> signed-in account required", verdict({ session: paid, existing: null, user: null }), "refused 401");
+  check("unknown session is refused", verdict({ session: null, existing: null, user: me }), "refused 404");
+  check("an unpaid session mints nothing", verdict({ session: { payment_status: "unpaid", status: "open" }, existing: null, user: me }), "refused 402");
+  check("a paid session mints a licence", verdict({ session: paid, existing: null, user: me }), "ok:mint");
+  check("the same session returns its licence to its owner", verdict({ session: paid, existing: { created_by_id: "u_me" }, user: me }), "ok:return");
+  check("…but NOT to another account", verdict({ session: paid, existing: { created_by_id: "u_other" }, user: me }), "refused 409");
+}
+
+// A returned licence must be the SAME licence, not a new one. buildClaims() mints a fresh jti and expiry, so
+// using it to return an existing row would hand the buyer a token that revoking the row does not touch.
+console.log("\nreturning an existing licence is the same licence\n");
+{
+  const { claimsFromRow, signLicence } = await import("../server/src/lib/licenceKey.js");
+  const row = { created_by_id: "u1", plan: "solo", seats: 2, kid: "vvs-2026-10", jti: "lic_fixed", issued_at: new Date(1700000000 * 1000), expires_at: new Date(1800000000 * 1000) };
+  const a = claimsFromRow(row);
+  const b = claimsFromRow(row);
+  check("claims are derived, not generated", a.jti, "lic_fixed");
+  check("…and derived twice is identical", JSON.stringify(a), JSON.stringify(b));
+  check("…expiry comes from the row", a.exp, 1800000000);
+  const tok = signLicence(a, (await import("node:crypto")).generateKeyPairSync("ed25519").privateKey.export({ type: "pkcs8", format: "pem" }));
+  const tok2 = signLicence(b, (await import("node:crypto")).generateKeyPairSync("ed25519").privateKey.export({ type: "pkcs8", format: "pem" }));
+  const payloadOf = (t) => JSON.parse(Buffer.from(t.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8"));
+  check("…the token carries the row's jti", payloadOf(tok).jti, "lic_fixed");
+  check("…and the row's expiry", payloadOf(tok).exp, 1800000000);
+  check("…two signatures of the same claims agree on payload", payloadOf(tok).jti === payloadOf(tok2).jti, true);
+}
+
+// A corpus purchase must end in DELIVERY, not a 422 explaining what they did not buy. The first version
+// refused it politely; that is a dead end on the page a customer reaches immediately after paying.
+console.log("\ncorpus purchases are delivered, not refused\n");
+{
+  const { feedForPackage, licenceForPackage } = await import("../server/src/lib/licencePolicy.js");
+  check("sdk buys a licence", JSON.stringify(licenceForPackage("sdk", 3)), JSON.stringify({ plan: "solo", seats: 3 }));
+  check("sdk_ent buys a team licence", JSON.stringify(licenceForPackage("sdk_ent", 2)), JSON.stringify({ plan: "team", seats: 2 }));
+  check("corpus is NOT a licence", licenceForPackage("corpus", 1), null);
+  check("…it delivers the feed", JSON.stringify(feedForPackage("corpus")), JSON.stringify({ feed: "corpus" }));
+  check("…and so does corpus_ent", JSON.stringify(feedForPackage("corpus_ent")), JSON.stringify({ feed: "corpus" }));
+  check("an unknown package is neither", feedForPackage("nonsense"), null);
+}
+
+console.log(failures === 0 ? "\nlicence issuance: every case behaves\n" : `\nlicence issuance: ${failures} case(s) wrong\n`);
+process.exit(failures === 0 ? 0 : 1);

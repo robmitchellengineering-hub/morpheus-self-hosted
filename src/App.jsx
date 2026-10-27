@@ -11,6 +11,8 @@ import InsufficientCreditsModal from '@/components/matrix/InsufficientCreditsMod
 import RootErrorBoundary from '@/components/RootErrorBoundary';
 // Add page imports here
 import ProtectedRoute from '@/components/ProtectedRoute';
+import Licences from '@/pages/Licences';
+import Claim from '@/pages/Claim';
 import MobileTabBar from '@/components/matrix/MobileTabBar';
 import Login from '@/pages/Login';
 import Register from '@/pages/Register';
@@ -159,6 +161,9 @@ function AnimatedRoutes() {
               flow needs to survive the login round trip. ConnectDevice checks auth
               itself and preserves the full URL via redirectToLogin. */}
           <Route path="/connect" element={<ConnectDevice />} />
+          {/* A buyer arrives here from Stripe, possibly with no account. Public on purpose: the page asks them to
+              sign in and carries ?session_id through the round trip, which the generic group would drop. */}
+          <Route path="/claim" element={<Claim />} />
           {/* Same reason as /connect: the generic group redirects to a bare
               /login, and someone who pressed "set up my website" must land back
               on THIS page after signing in, not on the workspace list. Start
@@ -175,6 +180,7 @@ function AnimatedRoutes() {
             <Route path="/architect" element={<Architect />} />
           <Route path="/portable-morpheus" element={<PortableMorpheusDownload />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/licences" element={<Licences />} />
             {/* Command Deck/Jarvis — 2026-09-17: opened up to every signed-in
                 account (Rob: "they dont see my command deck, they see their
                 own customisable command deck for their life"). The data

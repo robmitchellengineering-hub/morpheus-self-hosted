@@ -52,9 +52,18 @@ console.log('1. the allow-list is exactly what was agreed');
 
 // Pinned as a literal so that widening the credential's power is always a
 // deliberate edit to two files, never a side effect of adding a function.
+//
+// WIDENED 2026-10-26 — deliberately, for one read-only function. `operatorVision` asks this
+// deployment's own Gemini connection what is in an image and returns what it saw. It writes nothing,
+// creates nothing, spends no self-dev turn, and hands back no credential: the only thing it can do
+// is read pixels that the caller already had to host somewhere public. The reason it is here at all
+// is that the capability already existed and already worked (analyzeProductPhoto) but was welded to
+// a product-photo prompt, so an outside client could not use it and started trying to mint a second
+// Gemini key for the same deployment — a parallel integration for a capability already paid for.
 const EXPECTED_SCOPE = [
   'chatWithMorpheus', 'getSelfDevDecisions', 'getSelfDevFeatures', 'getSelfDevRuns',
   'importSelfDevRepo', 'mergeSelfDevPr', 'pushSelfDevToGithub', 'smokeCheckSelfDev', 'verifySelfDev',
+  'operatorVision',
 ].sort();
 check('OPERATOR_SCOPE_FUNCTIONS is unchanged', [...OPERATOR_SCOPE_FUNCTIONS].sort(), EXPECTED_SCOPE);
 

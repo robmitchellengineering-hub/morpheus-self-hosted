@@ -4545,18 +4545,32 @@ export const MUTATIONS = [
     replace: "stdio: ['inherit', 'pipe', 'pipe']",
   },
   {
+    guard: 'verify-valiant-licence.mjs',
+    file: 'server/src/lib/valiantLicence.js',
+    why: 'Makes a failed payment renew the licence anyway — the exact failure the guard exists for: paying would stop mattering, and the SDK would keep working after the subscription lapsed.',
+    find: "if (STOPPING.has(type)) return { renew: false, stop: true, why: `${type} — not paid; no licence is minted and the last one is left to expire` };",
+    replace: "if (STOPPING.has(type)) return { renew: true, why: `${type} — renewed anyway` };",
+  },
+  {
     guard: 'verify-guard-count-copy.mjs',
     file: 'src/lib/morpheusCapabilities.json',
     why: 'Raises the published guard count above the real one, so the drift this guard exists to catch would read as accurate copy.',
-    find: '132 automated guards',
+    find: '134 automated guards',
     replace: '999 automated guards',
   },
   {
     guard: 'verify-guard-count-copy.mjs',
     file: 'src/pages/Projects.jsx',
     why: 'Raises the published mutation-test count above the real one, so the second drift this guard pins would pass un-noticed.',
-    find: '505 recorded mutation tests',
+    find: '507 recorded mutation tests',
     replace: '999 recorded mutation tests',
+  },
+  {
+    guard: 'verify-licence-issuance.mjs',
+    file: 'server/src/lib/licenceKey.js',
+    why: 'Signs an expiry in minutes instead of days, so a licence that claims a 30-day term dies the same hour — the guard asserts now+days and must catch it.',
+    find: 'exp: iat + Math.round(n * 86400),',
+    replace: 'exp: iat + Math.round(n * 60),',
   },
 ];
 

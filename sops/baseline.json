@@ -1,0 +1,43 @@
+{
+  "what": "THE GUARANTEED BASELINE. Ours, shipped with the SDK, and not the customer's to change. Every rule names a check the SDK ships, so it runs on any machine with nothing configured. Two of the six (B4 provenance, B5 counting) are true the moment the baseline is installed; the other four are about EVIDENCE and stay unsatisfied \u2014 visibly, with the reason \u2014 until the repo has produced some. That is deliberate: a rule that reported itself satisfied with no evidence would be the failure this product exists to catch.",
+  "immutable": true,
+  "version": 1,
+  "rules": [
+    {
+      "id": "B1-gates-actually-run",
+      "title": "A verdict is never green without having run a check",
+      "why": "The single failure this product exists to catch: 'every contract holds' printed by something that checked nothing. Two things that pass while being wrong were found this way (zero gates; a check that was red anyway).",
+      "enforcedBy": "sdk:gates-ran"
+    },
+    {
+      "id": "B2-evidence-names-its-subject",
+      "title": "Every proof names a real file in the repo",
+      "why": "A proof whose guard cannot be pointed at is a row about nothing \u2014 a name in a comment counted as evidence until an independent review broke it.",
+      "enforcedBy": "sdk:evidence-subject"
+    },
+    {
+      "id": "B3-a-check-must-be-able-to-fail",
+      "title": "A guard is only accepted if its check passes clean and fails when sabotaged",
+      "why": "An always-red check reads as 'caught' while proving nothing. A gate nobody has seen go both ways is a hope.",
+      "enforcedBy": "sdk:guard-twoway"
+    },
+    {
+      "id": "B4-the-baseline-is-unmodified",
+      "title": "This file's hash matches what the SDK shipped",
+      "why": "A baseline a customer can edit is not a guarantee. Editing it locally must be detectable, not merely discouraged.",
+      "enforcedBy": "sdk:baseline-hash"
+    },
+    {
+      "id": "B5-quality-output-is-defined",
+      "title": "Every unenforced rule is counted, never silently ignored",
+      "why": "A rule with no check is an opinion. It may be accepted, but the count is printed on every run so 'we adopted the SOPs' cannot hide the ones nothing enforces.",
+      "enforcedBy": "sdk:unenforced-counted"
+    },
+    {
+      "id": "B6-remembers",
+      "title": "The run leaves a record a stranger could re-check",
+      "why": "Morpheus's doctrine: a verdict that exists only in a terminal is not evidence. mutations.json, the report and the hash are written down.",
+      "enforcedBy": "sdk:evidence-written"
+    }
+  ]
+}
