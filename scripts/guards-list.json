@@ -126,6 +126,7 @@
     "verify-ui-feedback.mjs",
     "verify-usage-observability.mjs",
     "verify-user-manual.mjs",
+    "verify-valiant-licence.mjs",
     "verify-verifier-coverage.mjs",
     "verify-web-research.mjs",
     "verify-working-copy.mjs",
