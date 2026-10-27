@@ -14,11 +14,13 @@
 // portable Morpheus bundle ships the source, so anything tracked is also published for download.
 //
 // Run:  node scripts/verify-no-secret-fixtures.mjs
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', 'coverage', '.venv', 'target', '__pycache__']);
+const SKIP_FILES = new Set(['.env', '.env.local', '.DS_Store']);
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 let failures = 0;
@@ -58,8 +60,28 @@ export const CREDENTIAL_PATTERNS = [
 // it hunts for (in its self-tests) and reported the repo clean because it had not been added to the index
 // yet. A check that cannot see the file it lives in is a check with a hole in the middle of it. Ignored
 // files stay out of scope, so a developer's local `.env` is not the repository's problem.
-const tracked = execFileSync('git', ['ls-files', '-co', '--exclude-standard', '-z'], { cwd: ROOT, encoding: 'utf8' })
-  .split('\0').filter(Boolean);
+// NO GIT IS NOT A PASS, AND NOT A CRASH. A verification tool runs this guard inside a throwaway copy that
+// deliberately excludes .git (it can hold hooks that execute), and an exported tarball has none either. Falling back to
+// a walk keeps the guard re-runnable there; the skip list mirrors what git would have excluded, so a developer's local
+// .env or node_modules stays out of scope exactly as before.
+const walk = (dir, out = []) => {
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    if (SKIP_DIRS.has(e.name)) continue;
+    if (SKIP_FILES.has(e.name)) continue;
+    const rel = join(dir, e.name).slice(ROOT.length + 1);
+    if (e.isDirectory()) walk(join(dir, e.name), out);
+    else if (e.isFile()) out.push(rel);
+  }
+  return out;
+};
+const tracked = (() => {
+  try {
+    return execFileSync('git', ['ls-files', '-co', '--exclude-standard', '-z'], { cwd: ROOT, encoding: 'utf8' })
+      .split('\0').filter(Boolean);
+  } catch {
+    return walk(ROOT);
+  }
+})();
 
 // Binary files are skipped by reading, not by guessing from the name: a `.png` that happens to contain a
 // credential-shaped byte run is not a leak anybody can act on, and a text file with any extension is.
