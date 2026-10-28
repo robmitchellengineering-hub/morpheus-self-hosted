@@ -178,9 +178,17 @@ export function creditBalanceCap(env) {
   return readPositiveSetting(runtimeEnv(env), CREDIT_BALANCE_CAP_ENV);
 }
 
-/** Purchased-credit expiry window, in whole months. null = no expiry (the default). */
+/**
+ * Purchased-credit expiry window, in whole months. null = no expiry (the default).
+ *
+ * A fractional value is NOT a shorter window: `addMonths` truncates, so `0.5`
+ * would become "expire at the moment of purchase". A value that is not a whole
+ * number is therefore treated as unset — the same fail-safe direction as an
+ * unreadable value, never an accidental instant expiry.
+ */
 export function creditExpiryMonths(env) {
-  return readPositiveSetting(runtimeEnv(env), CREDIT_EXPIRY_MONTHS_ENV);
+  const n = readPositiveSetting(runtimeEnv(env), CREDIT_EXPIRY_MONTHS_ENV);
+  return n != null && Number.isInteger(n) ? n : null;
 }
 
 /** Per-build ceiling, in credits. null = no ceiling (the default). */

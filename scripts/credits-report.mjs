@@ -129,7 +129,7 @@ try {
 
   const float = summary.floatShare == null
     ? 'n/a (no provider spend in the window)'
-    : `${summary.floatShare.toFixed(2)}× the provider bill`;
+    : `${(summary.floatShare * 100).toFixed(2)}% of the ${WINDOW_DAYS}-day provider bill (${summary.floatShare.toFixed(2)}×)`;
 
   console.log('\nMorpheus credits — deferred revenue\n');
   console.log(`  window: trailing ${WINDOW_DAYS} days · face rate: $${CREDIT_RATE_USD}/credit · accounts: ${accounts.length}`);

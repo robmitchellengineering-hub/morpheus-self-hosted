@@ -80,6 +80,8 @@ purchasable lot.
 
 - Configuration: `CREDITS_EXPIRY_MONTHS` (whole months from the purchase date).
 - Unset, empty, `0`, negative or unreadable = **no expiry** — the mechanism is off.
+  A value that is not a whole number of months is treated the same way: it is not a
+  shorter window, because truncating `0.5` would expire a lot at the instant it was bought.
 - Consumption is allocated to purchases oldest-first, so an expiry removes only the
   *unused* part of a purchased lot. Signup credits sit behind purchases and are exempt.
 - An expiry is written as a `CreditTransaction` with `status: 'expired'` and a negative
@@ -110,7 +112,12 @@ An unattended build cannot exceed **N credits** without explicit consent.
   budget is refused rather than read as zero.
 - Explicit consent is a per-project `PlatformSetting`:
   `build_ceiling_consent_<projectId>` — a number of additional credits allowed for that
-  project. Setting it is an explicit, auditable action; it is not inferred.
+  project. It is granted by an admin through `POST /api/admin/build-ceiling-consent`
+  with `{ "projectId": "...", "credits": N }`; `credits: 0` revokes it. The write is
+  recorded in `AdminAuditLog` because it is an explicit spend authorisation, not a
+  convenience toggle. (The generic `/api/admin/settings` route cannot carry this key:
+  a project id is a UUID with hyphens, and that route's key charset has none.)
+- Setting it is an explicit, auditable action; it is not inferred.
 - The reservation that would cross the ceiling throws `BUILD_CEILING_EXCEEDED` (HTTP 402)
   before any AI call is made. The next call is blocked until consent is granted.
 - A `chatWithMorpheus` build starts a fresh budget; an `autonomousBuildStep` continues the
@@ -143,6 +150,8 @@ never a pass.
   purchasable lot;
 - the ceiling is reached through the reservation path with a project id, and followed to
   the actual charge on reconciliation;
+- an admin can grant explicit per-project consent, the grant is audited, and it is inert
+  while `CREDITS_BUILD_CEILING` is unset;
 - no customer-facing copy promises a free AI path or "no expiry";
 - the terms carry the credit-is-service and ownership-is-output clauses;
 - the deferred-revenue report still reports sold vs consumed vs outstanding vs provider

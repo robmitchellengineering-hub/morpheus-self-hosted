@@ -94,3 +94,21 @@ export function parseBuildSpend(raw) {
   const n = Number(raw);
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
+
+/**
+ * Read an explicit per-project consent amount, in credits.
+ *
+ * `0` is a real answer — revoke the consent — so it cannot share the `null`
+ * that means "unreadable". A negative, blank or non-numeric value is refused
+ * rather than coerced to zero: a consent write that silently grants nothing
+ * would look like it worked and leave an unattended build blocked.
+ *
+ * Lives here, with the key helpers, so the admin route and the guard reach the
+ * same rule instead of keeping two spellings of "a positive number".
+ */
+export function buildConsentAmount(value) {
+  if (value == null || String(value).trim() === '') return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round(n * 10000) / 10000;
+}

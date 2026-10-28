@@ -74,7 +74,12 @@ export function expiredPurchasedCredits({
 } = {}) {
   const signup = round4(Math.max(0, Number(signupCredits || 0)));
   const window = Number(months);
-  if (!Number.isFinite(window) || window <= 0) {
+  // A window shorter than one whole month is not a window: `addMonths` would
+  // truncate it to zero and expire the lot at the instant it was bought. The
+  // config parser already refuses a fraction; this is the same rule for any
+  // direct caller (a test, a future scheduler) so the safety does not depend on
+  // which entry point reached the arithmetic.
+  if (!Number.isFinite(window) || window < 1) {
     return { credits: 0, remainingSignup: signup, lots: [] };
   }
 

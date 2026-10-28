@@ -37,6 +37,7 @@ import { addMonths, expiredPurchasedCredits, round4 } from '../server/src/lib/cr
 import {
   buildBudgetKey,
   buildConsentKey,
+  buildConsentAmount,
   buildReservationAmount,
   parseBuildSpend,
 } from '../server/src/lib/buildBudget.js';
@@ -66,6 +67,7 @@ const webhook = read('server/src/functions/stripeWebhook.js');
 const chat = read('server/src/functions/chatWithMorpheus.js');
 const autonomous = read('server/src/functions/autonomousBuildStep.js');
 const budgetStore = read('server/src/lib/buildBudgetStore.js');
+const adminRoutes = read('server/src/routes/admin.routes.js');
 const envExample = read('server/.env.example');
 // The reservation function's own body, so a check cannot be satisfied by the
 // function DEFINITION of a helper it is supposed to call (H19). If the function
@@ -104,6 +106,13 @@ check('…and never retroactive', /no\s+repricing\s+is\s+ever\s+applied\s+retroa
 
 // ═══ 2. THE THREE CONFIGURATION KNOBS EXIST, AND OFF MEANS OFF ══════════════
 console.log('\n2. cap, expiry and ceiling are config-driven, and unset means off');
+// Declared before their first use: a `const` read above its declaration is a
+// temporal-dead-zone ReferenceError, and it would abort the guard rather than
+// report a check (H18). Section 3 reuses the same fixed dates.
+const jan = new Date(Date.UTC(2026, 0, 1));
+const feb = new Date(Date.UTC(2026, 1, 1));
+const jul = new Date(Date.UTC(2026, 6, 1));
+const sep = new Date(Date.UTC(2026, 8, 1));
 check('cap env name', CREDIT_BALANCE_CAP_ENV, 'CREDITS_BALANCE_CAP');
 check('expiry env name', CREDIT_EXPIRY_MONTHS_ENV, 'CREDITS_EXPIRY_MONTHS');
 check('ceiling env name', CREDIT_BUILD_CEILING_ENV, 'CREDITS_BUILD_CEILING');
@@ -120,6 +129,10 @@ check('cap: absent is off', creditBalanceCap({}), null);
 check('expiry: a positive window is used', creditExpiryMonths({ CREDITS_EXPIRY_MONTHS: '12' }), 12);
 check('expiry: zero is off', creditExpiryMonths({ CREDITS_EXPIRY_MONTHS: '0' }), null);
 check('expiry: negative is off', creditExpiryMonths({ CREDITS_EXPIRY_MONTHS: '-6' }), null);
+check('expiry: a fraction is not an instant window, it is off',
+  creditExpiryMonths({ CREDITS_EXPIRY_MONTHS: '0.5' }), null);
+check('…and the arithmetic refuses a sub-month window even when called directly',
+  expiredPurchasedCredits({ purchases: [{ credits: 100, created_date: jan }], signupCredits: 200, months: 0.5, now: jan }).credits, 0);
 check('ceiling: a positive N is used', buildCeilingCredits({ CREDITS_BUILD_CEILING: '250' }), 250);
 check('ceiling: zero is off', buildCeilingCredits({ CREDITS_BUILD_CEILING: '0' }), null);
 
@@ -139,10 +152,6 @@ check('the policy has a decisions table', /Decisions Rob must make/i.test(policy
 
 // ═══ 3. EXPIRY: PURCHASED CREDITS ONLY, SIGNUP GRANT EXEMPT ═════════════════
 console.log('\n3. only purchased credits expire; the signup grant is exempt');
-const jan = new Date(Date.UTC(2026, 0, 1));
-const feb = new Date(Date.UTC(2026, 1, 1));
-const jul = new Date(Date.UTC(2026, 6, 1));
-const sep = new Date(Date.UTC(2026, 8, 1));
 
 check('no configured window means no expiry',
   expiredPurchasedCredits({ purchases: [{ credits: 100, created_date: jan }], signupCredits: 200, months: null, now: sep }).credits, 0);
@@ -246,6 +255,16 @@ check('the policy says the ceiling is keyed by project id',
   /keyed by \*\*project id\*\*|keyed by project id/i.test(policyDoc), true);
 check('…and consent is an explicit per-project setting',
   /build_ceiling_consent_/i.test(policyDoc), true);
+check('consent: a positive amount is accepted', buildConsentAmount('25'), 25);
+check('…zero is a real revocation, not unreadable', buildConsentAmount(0), 0);
+check('…a negative, blank or garbage amount is refused',
+  [buildConsentAmount(-1), buildConsentAmount(''), buildConsentAmount('lots')], [null, null, null]);
+check('an admin can grant explicit per-project consent',
+  /router\.post\('\/build-ceiling-consent'/.test(adminRoutes)
+    && /buildConsentKey\(project\.id\)/.test(adminRoutes)
+    && /setPlatformSetting\(key, String\(amount\)/.test(adminRoutes), true);
+check('…the consent write is audited', /action:\s*'build_ceiling_consent'/.test(adminRoutes), true);
+check('…and sits under the admin gate', /router\.use\(requireAuth,\s*blockWidget,\s*requireAdmin\)/.test(adminRoutes), true);
 
 // ═══ 6. NO CUSTOMER-FACING COPY PROMISES A FREE PATH OR NO EXPIRY ═══════════
 console.log('\n6. nothing a customer reads promises a free path or "no expiry"');
