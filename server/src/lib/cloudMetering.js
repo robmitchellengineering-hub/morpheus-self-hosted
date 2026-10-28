@@ -17,6 +17,7 @@
 // the follow-up is a `broker_gateway_tokens` row (hash, label, last_used_at, revoked_at).
 import crypto from 'node:crypto';
 import { sameToken } from './tokenHash.js';
+import { CREDIT_RATE_USD } from './creditPolicy.js';
 
 /** Prefixed like this repo's other bearer kinds (`wgt_`, `dvc_`, `opr_`, `apc_`). */
 export const TOKEN_PREFIX = 'mgw_';
@@ -172,7 +173,7 @@ export function authorizeCloudCall({ account, remainingCredits, estimateCredits,
  */
 export function chargeFor({ inputTokens, outputTokens, inputPerM, outputPerM, markup }) {
   const usd = (Number(inputTokens || 0) * Number(inputPerM || 0) + Number(outputTokens || 0) * Number(outputPerM || 0)) / 1_000_000;
-  return Math.round(((usd * Number(markup || 0)) / 0.005) * 10000) / 10000;
+  return Math.round(((usd * Number(markup || 0)) / CREDIT_RATE_USD) * 10000) / 10000;
 }
 
 /**
@@ -200,7 +201,7 @@ export function estimateCallCredits({ promptChars, maxTokens, inputPerM, outputP
   const inputTokens = Math.ceil(Number(promptChars || 0) / charsPerToken);
   const outputTokens = Number(maxTokens || 0);
   const usd = (inputTokens * Number(inputPerM || 0) + outputTokens * Number(outputPerM || 0)) / 1_000_000;
-  return Math.round(((usd * Number(markup || 0) * Number(safety || 0)) / 0.005) * 10000) / 10000;
+  return Math.round(((usd * Number(markup || 0) * Number(safety || 0)) / CREDIT_RATE_USD) * 10000) / 10000;
 }
 
 /**

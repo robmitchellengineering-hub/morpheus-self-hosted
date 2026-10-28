@@ -563,7 +563,7 @@ function UsageMeter() {
   };
 
   return (
-    <Card title="Usage" sub="Every AI action across Morpheus and Jarvis draws from one shared credit balance — no subscription, no expiry.">
+    <Card title="Usage" sub="Every AI action across Morpheus and Jarvis draws from one shared credit balance — no subscription. Signup credits are exempt from expiry; purchased credits may expire after the window shown at purchase.">
       {banner?.kind === 'success' && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: C.tweedDark, borderRadius: 8, padding: '0.5rem 0.6rem', marginBottom: '0.7rem', fontSize: '0.78rem', color: C.sage }}>
           <Check size={14} /> Payment received — your balance updates within a few seconds.

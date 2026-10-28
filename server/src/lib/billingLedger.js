@@ -12,10 +12,11 @@
 //
 //   * The retail formula holds EXACTLY. A sampled row charged 14.9016 credits; the formula
 //     (tokens × the resolved rate × markup ÷ $0.005) gives 14.9016. So the meter is self-consistent.
-//   * `credit_balance == 200 + purchases − charged` holds for every account EXCEPT one, and that one
+//   * `credit_balance == 200 + purchases − charged − expired` holds for every account EXCEPT one, and that one
 //     is the documented absorption case: the account exhausted, `reconcileCredits` refuses to take a
 //     balance below zero, and the remainder is absorbed as platform cost. So the invariant needs that
-//     case named, not an equality that would cry wolf on the intended behaviour.
+//     case named, not an equality that would cry wolf on the intended behaviour. `expired` is a
+//     fourth term only once `CREDITS_EXPIRY_MONTHS` is set; it is zero in the measurement above.
 //   * One admin row was charged 5.1348 credits on 2026-09-01 — the first day of usage, before the
 //     role exemption was in force. The check therefore REPORTS it rather than failing on it: the role
 //     a user held when a call was made is not recorded, so it cannot be verified retroactively.
@@ -26,7 +27,7 @@
 // drift from the meter. The database half lives in `scripts/verify-billing-ledger.mjs`, which uses the
 // REAL pricing functions (`resolveBillingRate`, `resolveBillingMarkup`, `usdToCredits`) so the checker
 // cannot drift from the meter it is checking.
-import { FLAT_CALL_CREDITS } from './creditPolicy.js';
+import { FLAT_CALL_CREDITS, CREDIT_RATE_USD } from './creditPolicy.js';
 
 /** The signup grant, as a column default rather than a transaction — see the schema. */
 export const SIGNUP_CREDITS = 200;
@@ -48,7 +49,7 @@ export function round4(value) {
 export function expectedCharge({ inputTokens, outputTokens, inputPerM, outputPerM, markup, ownKey, flat }) {
   if (flat || ownKey) return round4(FLAT_CALL_CREDITS); // the flat rule — see lib/creditPolicy.js
   const usd = (Number(inputTokens || 0) * inputPerM + Number(outputTokens || 0) * outputPerM) / 1_000_000;
-  const credits = (usd * markup) / 0.005;
+  const credits = (usd * markup) / CREDIT_RATE_USD;
   return round4(credits);
 }
 
@@ -59,9 +60,9 @@ export function checkChargeRow({ creditsCharged, inputTokens, outputTokens, inpu
   return { ok: Math.abs(gap) < 0.005, expected, gap };
 }
 
-/** `balance == signup + purchases − charged`, before any explanation. */
-export function impliedBalance({ purchased = 0, charged = 0 }) {
-  return round4(SIGNUP_CREDITS + Number(purchased || 0) - Number(charged || 0));
+/** `balance == signup + purchases − charged − expired`, before any explanation. */
+export function impliedBalance({ purchased = 0, charged = 0, expired = 0 }) {
+  return round4(SIGNUP_CREDITS + Number(purchased || 0) - Number(charged || 0) - Number(expired || 0));
 }
 
 /**

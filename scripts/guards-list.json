@@ -1,6 +1,6 @@
 {
   "generatedFrom": "ci.yml guards job",
-  "count": 128,
+  "count": 131,
   "guards": [
     "context.mjs",
     "verify-ai-cost-claims.mjs",
@@ -31,6 +31,7 @@
     "verify-context.mjs",
     "verify-contrast.mjs",
     "verify-cors.mjs",
+    "verify-credits-policy.mjs",
     "verify-deck-add-guard.mjs",
     "verify-deck-crm-edit.mjs",
     "verify-deck-document.mjs",

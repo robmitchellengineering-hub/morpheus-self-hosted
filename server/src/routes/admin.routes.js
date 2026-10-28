@@ -6,6 +6,8 @@ import { requireAuth, requireAdmin, blockWidget } from '../auth.js';
 import { runFreshnessCheck, runFreshnessCheckAndNotify } from '../freshness.js';
 import { prisma } from '../db.js';
 import { getAllPlatformSettings, getPlatformSetting, setPlatformSetting } from '../lib/platformSettings.js';
+import { buildConsentAmount, buildConsentKey } from '../lib/buildBudget.js';
+import { buildCeilingCredits } from '../lib/creditPolicy.js';
 import { MODEL_PRICING } from '../lib/costEstimate.js';
 import { brokerConfigured } from '../config/hostedDefaults.js';
 import { getCachedStatus as getDeepSeekBalanceStatus, isDeepSeekPrimary, hasFallbackConfigured } from '../lib/deepseekBalance.js';
@@ -155,6 +157,63 @@ router.post('/settings', async (req, res) => {
     });
 
     res.json({ ok: true, key, value: value || null });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Explicit consent for the per-build spend ceiling (docs/CREDITS-POLICY.md §8).
+//
+// This is its own route because the generic /settings route above rejects the
+// key it needs: a project id is a UUID containing hyphens, and that route
+// accepts only letters, numbers and underscores. Naming the operation also
+// makes the audit entry say what the admin actually authorised — extra spend
+// for one project — instead of a generic setting change.
+//
+// `credits: 0` revokes the consent. The value is written rather than deleted so
+// the 30s settings cache is invalidated by setPlatformSetting and a revocation
+// still leaves an audit trail.
+router.post('/build-ceiling-consent', async (req, res) => {
+  try {
+    const { projectId, credits } = req.body || {};
+    if (!projectId || typeof projectId !== 'string') {
+      return res.status(400).json({ error: 'projectId required' });
+    }
+    const amount = buildConsentAmount(credits);
+    if (amount == null) {
+      return res.status(400).json({ error: 'credits must be a non-negative number (0 revokes consent)' });
+    }
+
+    const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true, name: true } });
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    const key = buildConsentKey(project.id);
+    const before = await getPlatformSetting(key);
+    await setPlatformSetting(key, String(amount), req.user.id);
+
+    await prisma.adminAuditLog.create({
+      data: {
+        admin_id: req.user.id,
+        action: 'build_ceiling_consent',
+        details: JSON.stringify({
+          projectId: project.id,
+          projectName: project.name,
+          before: before || null,
+          after: String(amount),
+        }),
+      },
+    });
+
+    res.json({
+      ok: true,
+      projectId: project.id,
+      key,
+      credits: amount,
+      // Consent is inert while the ceiling itself is unset. Returning this makes
+      // that visible to the admin instead of letting them believe a build is
+      // capped when CREDITS_BUILD_CEILING is empty.
+      ceilingConfigured: buildCeilingCredits() != null,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

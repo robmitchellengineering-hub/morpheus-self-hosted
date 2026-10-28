@@ -290,7 +290,7 @@ export default function Landing() {
           <div className="border-t border-primary/30 mt-3 pt-2">
             <p className="text-[10px] text-primary/50 tracking-[0.2em] font-display">// PRICING</p>
             <p className="text-xs text-ink-strong leading-snug mt-1">
-              No subscription. Every account starts with 200 free credits — enough to plan, build and ship a real first app — then pay-as-you-go, or free forever on your own AI provider key.
+              No subscription. Every account starts with 200 free credits — enough to plan, build and ship a real first app — then pay-as-you-go. Bringing your own AI provider key is cheaper, not free: own-key calls are still metered at a flat rate.
             </p>
           </div>
         </div>}

@@ -124,3 +124,111 @@ export function isFlatRateCall({ provider, model } = {}) {
   for (const flat of FLAT_RATE_MODELS) if (canonicalModelId(flat) === id) return true;
   return false;
 }
+
+// ── CREDIT POLICY (2026-10-27) ────────────────────────────────────────────────
+//
+// The commercial rules live in docs/CREDITS-POLICY.md; this block is the single
+// code home for the numbers that policy refers to. It is import-free on purpose
+// (same reason as the rest of this file): `scripts/verify-credits-policy.mjs`
+// must be able to assert the face rate, the cap, the expiry window and the
+// per-build ceiling in CI's no-install guards job, and importing `billing.js`
+// would drag `@prisma/client` into it through `db.js`.
+//
+// NOTHING HERE IS A NEW PRICE. The face rate is the rate Rob decided on
+// 2026-09-01. The cap, expiry window and build ceiling are deliberately UNSET:
+// unset/empty/0/negative/invalid means "mechanism off", so shipping this file
+// changes no customer's bill and no build.
+
+/** The decided face rate: $5 per 1,000 credits. The one place it is written. */
+export const CREDIT_RATE_USD = 0.005; // $5 / 1,000 credits, decided 2026-09-01
+
+/** How many credits one US dollar buys at the face rate (200 at $0.005). */
+export const CREDITS_PER_USD = 1 / CREDIT_RATE_USD;
+
+// The signup grant deliberately does NOT live here: it is `SIGNUP_CREDITS` in
+// `billingLedger.js`, where the ledger arithmetic already depends on it, and a
+// second 200 in this file would be a copy that can drift. `billing.js` imports
+// that one constant for the expiry rule.
+
+export const CREDIT_BALANCE_CAP_ENV = 'CREDITS_BALANCE_CAP';
+export const CREDIT_EXPIRY_MONTHS_ENV = 'CREDITS_EXPIRY_MONTHS';
+export const CREDIT_BUILD_CEILING_ENV = 'CREDITS_BUILD_CEILING';
+
+/**
+ * Read one positive-number credit setting. Absent/blank/0/negative/NaN all mean
+ * "not configured" and return null — a placeholder must never become a silent
+ * zero or an accidental unlimited value. This is the ONE parser the three
+ * settings share, so they cannot disagree about what "off" looks like.
+ */
+function readPositiveSetting(env, key) {
+  const raw = env?.[key];
+  if (raw == null || String(raw).trim() === '') return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n;
+}
+
+function runtimeEnv(env) {
+  if (env) return env;
+  return typeof process !== 'undefined' && process.env ? process.env : {};
+}
+
+/** Maximum balance, in credits. null = no cap (the default until Rob sets one). */
+export function creditBalanceCap(env) {
+  return readPositiveSetting(runtimeEnv(env), CREDIT_BALANCE_CAP_ENV);
+}
+
+/**
+ * Purchased-credit expiry window, in whole months. null = no expiry (the default).
+ *
+ * A fractional value is NOT a shorter window: `addMonths` truncates, so `0.5`
+ * would become "expire at the moment of purchase". A value that is not a whole
+ * number is therefore treated as unset — the same fail-safe direction as an
+ * unreadable value, never an accidental instant expiry.
+ */
+export function creditExpiryMonths(env) {
+  const n = readPositiveSetting(runtimeEnv(env), CREDIT_EXPIRY_MONTHS_ENV);
+  return n != null && Number.isInteger(n) ? n : null;
+}
+
+/** Per-build ceiling, in credits. null = no ceiling (the default). */
+export function buildCeilingCredits(env) {
+  return readPositiveSetting(runtimeEnv(env), CREDIT_BUILD_CEILING_ENV);
+}
+
+/**
+ * Would crediting `credits` take `balance` over `cap`? null cap = never.
+ *
+ * Fail CLOSED when a cap is configured but the numbers cannot be read: an
+ * unreadable balance or limit must refuse the purchase, not silently disable
+ * the cap. This is the same rule `withinBuildCeiling` applies to a build.
+ */
+export function wouldExceedBalanceCap(balance, credits, cap) {
+  if (cap == null) return false;
+  const limit = Number(cap);
+  // Do NOT coerce a missing part to zero: a balance nobody could read is not a
+  // balance of zero, and treating it as one would let the purchase past the cap.
+  if (balance == null || credits == null) return true;
+  const next = Number(balance) + Number(credits);
+  if (!Number.isFinite(limit) || !Number.isFinite(next)) return true;
+  return next > limit;
+}
+
+/**
+ * Is one more reservation of `requestedCredits` allowed inside the ceiling?
+ * `consentCredits` is the explicit per-project consent (an admin-set
+ * PlatformSetting), added to the ceiling rather than replacing it.
+ */
+export function withinBuildCeiling(spentCredits, requestedCredits, ceilingCredits, consentCredits = 0) {
+  if (ceilingCredits == null) return true;
+  // A missing spend or request is unreadable, not zero: treating it as zero
+  // would forget what the build has already used and let it overspend.
+  if (spentCredits == null || requestedCredits == null) return false;
+  // `?? 0`, not `|| 0`: a NaN must stay NaN and be refused below, rather than
+  // becoming an accidental zero that lets an unreadable budget through.
+  const spent = Number(spentCredits);
+  const requested = Number(requestedCredits);
+  const allowed = Number(ceilingCredits) + Number(consentCredits ?? 0);
+  if (![spent, requested, allowed].every(Number.isFinite)) return false;
+  return spent + requested <= allowed;
+}
