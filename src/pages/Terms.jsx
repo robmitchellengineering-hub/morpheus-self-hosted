@@ -29,7 +29,14 @@ export default function Terms() {
       <h2>8. Changes</h2>
       <p>We may update these Terms as the Market evolves. Material changes will be announced; continued use after the effective date constitutes acceptance.</p>
 
-      <h2>9. Contact</h2>
+      {/* DRAFT — Rob to review. The same two paragraphs are in docs/CREDITS-POLICY.md
+          §11. They exist to stop two claims blurring: a credit is a service unit, and
+          "own it for life" is about the software Morpheus produces, never the credits. */}
+      <h2>9. Credits &amp; Ownership</h2>
+      <p><strong>Credits are service units.</strong> A credit is a unit of Morpheus service. It is not a quantity of provider tokens, not a share of a model bill and not stored money. We may revise the published conversion for future purchases and future consumption with notice; a change is never applied retroactively to an existing balance. Purchased credits may expire after the period shown at purchase; signup credits are exempt from expiry. Balances may be capped, and an unattended build may pause at a per-build spend ceiling until you give explicit consent.</p>
+      <p><strong>Ownership is about output, not credits.</strong> "Own it for life" refers to the software Morpheus produces for you — the source code, files and builds you can download, keep and deploy. It does not refer to credits, a balance, or a right to future AI calls.</p>
+
+      <h2>10. Contact</h2>
       <p>Questions about these Terms can be directed to Morpheus support through the app's Settings page.</p>
     </LegalPage>
   );

@@ -31,6 +31,8 @@ import { unknownPrismaFields, isCodePath } from '../lib/prismaFields.js';
 import { checkSyntax } from '../lib/syntaxCheck.js';
 import { getDeliveryAdapter } from '../lib/delivery/index.js';
 import { containerMemory, describeContainerMemory } from '../lib/containerMemory.js';
+import { enterBuild, exitBuild } from '../lib/buildBudget.js';
+import { beginBuild, finishBuild } from '../lib/buildBudgetStore.js';
 import { verifyExternalApiCalls, formatApiCheckBlock } from '../lib/externalApiCheck.js';
 import { selfDevToolsPromptBlock, runSelfDevToolCalls, formatSelfDevToolResultsBlock, extractScreenshotUrls } from '../lib/selfDevTools.js';
 import { getConstructContext } from '../lib/constructContext.js';
@@ -1136,6 +1138,15 @@ OPERATOR SAYS: ${message}`;
   let laneSplit = null;
 
   try {
+    // Per-build spend ceiling (docs/CREDITS-POLICY.md §8). Only a BUILD turn is
+    // a build: CONTEXT mode is a discussion and is not charged against the
+    // project's build budget. This sets the async context the reservation path
+    // reads; the planning/coding/reviewing pipeline below is untouched.
+    if (mode === 'build') {
+      enterBuild(projectId);
+      await beginBuild(projectId);
+    }
+
     // ── Phase 0a: Web research — search + read pasted URLs before planning ──
     // Runs for both CONTEXT and BUILD mode (it's just as useful when
     // discussing an approach as when building it).
@@ -2641,5 +2652,11 @@ laneSplit, rework: { syntax: syntaxFixAttempts, bundle: bundleFixAttempts, conve
     }
   } finally {
     res.end();
+    if (mode === 'build') {
+      // A chat turn is one build; the next turn starts from zero. finishBuild
+      // catches its own bookkeeping failures, and exitBuild only clears context.
+      await finishBuild(projectId);
+      exitBuild();
+    }
   }
 }

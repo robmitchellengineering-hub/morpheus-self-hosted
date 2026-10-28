@@ -17,6 +17,7 @@ import { prisma } from '../db.js';
 import { computeSplit } from '../lib/stripe.js';
 import { licenceForEvent } from '../lib/valiantLicence.js';
 import { sendMail } from '../lib/mailer.js';
+import { applyExpiredPurchasedCredits } from '../lib/billing.js';
 
 function verifyStripeSignature(rawBody, signature, secret) {
   const parts = String(signature || '').split(',').reduce((acc, p) => {
@@ -179,6 +180,10 @@ export default async function handler({ req, res }) {
 
     const existingTxn = await prisma.creditTransaction.findFirst({ where: { stripe_session_id: session.id } });
     if (!existingTxn) {
+      // Expire old purchased credits before granting new ones. Gated by
+      // CREDITS_EXPIRY_MONTHS and idempotent; the helper logs and returns 0 if
+      // it cannot run, so a policy check can never cost the buyer their grant.
+      await applyExpiredPurchasedCredits(userId);
       try {
         await prisma.$transaction([
           prisma.creditTransaction.create({

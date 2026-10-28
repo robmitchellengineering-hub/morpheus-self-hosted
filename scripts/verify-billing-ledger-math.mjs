@@ -86,6 +86,14 @@ check('…and names the delta, signed', classifyBalance({ balance: 50, implied: 
 check('a zero balance with an implied zero is balanced, not absorbed',
   classifyBalance({ balance: 0, implied: 0 }).state, 'balanced');
 
+console.log('\n4b. expiry is a legitimate debit, not drift');
+check('expired purchased credits are subtracted like a charge',
+  impliedBalance({ purchased: 1000, charged: 200, expired: 100 }), 900);
+check('an account with no expiry rows keeps the measured balance',
+  impliedBalance({ purchased: 0, charged: 5.1348 }), 194.8652);
+check('the formula is signup + purchases − charges − expiry',
+  impliedBalance({ purchased: 100, charged: 20, expired: 30 }), 250);
+
 console.log('\n5. precision: credits are Decimal(14,4) and comparisons use that');
 check('round4 trims float noise', round4(14.901600000001), 14.9016);
 check('round4 handles negatives', round4(-3.77124999), -3.7712);

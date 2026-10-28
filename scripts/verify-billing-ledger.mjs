@@ -19,7 +19,7 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkChargeRow, classifyBalance, impliedBalance, round4, SIGNUP_CREDITS } from '../server/src/lib/billingLedger.js';
-import { isFlatRateCall, isOwnKeyProvider, FLAT_RATE_SINCE } from '../server/src/lib/creditPolicy.js';
+import { isFlatRateCall, isOwnKeyProvider, FLAT_RATE_SINCE, CREDIT_RATE_USD } from '../server/src/lib/creditPolicy.js';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
 const ENV_PATH = join(REPO, 'server', '.env.prodsql');
@@ -61,8 +61,10 @@ try {
            created_date
     from usage_events`)).rows;
   const purchases = (await pool.query(`
-    select created_by_id, sum(credits)::float as credits from credit_transactions
-    where status = 'paid' group by created_by_id`)).rows;
+    select created_by_id,
+           coalesce(sum(case when status = 'paid' then credits else 0 end), 0)::float as credits,
+           coalesce(sum(case when status = 'expired' then -credits else 0 end), 0)::float as expired
+    from credit_transactions group by created_by_id`)).rows;
 
   console.log('\nBilling ledger — charges against recorded usage\n');
   console.log(`  users ${users.length} · usage rows ${usage.length} · purchase rows ${purchases.length}`);
@@ -135,21 +137,25 @@ try {
     if (row.credits_charged > 0) chargedBy.set(row.created_by_id, round4((chargedBy.get(row.created_by_id) || 0) + row.credits_charged));
   }
   const boughtBy = new Map(purchases.map((p) => [p.created_by_id, Number(p.credits || 0)]));
+  const expiredBy = new Map(purchases.map((p) => [p.created_by_id, Number(p.expired || 0)]));
 
   let absorbedTotal = 0, drifted = 0;
   for (const u of users) {
     const charged = chargedBy.get(u.id) || 0;
     const purchased = boughtBy.get(u.id) || 0;
-    const implied = impliedBalance({ purchased, charged });
+    // Expiry is a legitimate debit, not drift: an expired row is a negative
+    // CreditTransaction with status='expired', written by lib/billing.js.
+    const expired = expiredBy.get(u.id) || 0;
+    const implied = impliedBalance({ purchased, charged, expired });
     const verdict = classifyBalance({ balance: u.balance, implied });
     if (verdict.state === 'absorbed') absorbedTotal = round4(absorbedTotal + verdict.absorbed);
     if (verdict.state === 'drift') {
       drifted++;
-      if (drifted <= 5) note(`balance drift: ${u.email} holds ${u.balance} but purchases minus charges imply ${implied} (delta ${verdict.delta})`);
+      if (drifted <= 5) note(`balance drift: ${u.email} holds ${u.balance} but purchases minus charges and expiry imply ${implied} (delta ${verdict.delta})`);
     }
   }
-  console.log(`\n3. every balance equals ${SIGNUP_CREDITS} signup + purchases − charges`);
-  console.log(`   accounts drifted ${drifted} · absorbed as platform cost ${absorbedTotal} credits ($${(absorbedTotal * 0.005).toFixed(4)})`);
+  console.log(`\n3. every balance equals ${SIGNUP_CREDITS} signup + purchases − charges − expired`);
+  console.log(`   accounts drifted ${drifted} · absorbed as platform cost ${absorbedTotal} credits ($${(absorbedTotal * CREDIT_RATE_USD).toFixed(4)})`);
   if (drifted) failures++;
   if (absorbedTotal > 0) console.log('   (absorption is the documented floor-at-zero behaviour, not drift — reported as cost)');
 

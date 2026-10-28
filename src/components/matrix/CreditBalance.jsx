@@ -84,7 +84,7 @@ export default function CreditBalance() {
         <Coins size={14} /> CREDITS
       </h2>
       <p className="text-xs text-ink-strong mb-4">
-        // Every AI action costs a small number of credits — new accounts start with 200 free. Buy more any time; no subscription, no expiry.
+        // Every AI action costs a small number of credits — new accounts start with 200 free. Buy more any time; no subscription. Signup credits are exempt from expiry; purchased credits may expire after the window shown at purchase.
       </p>
 
       {banner?.kind === 'success' && (

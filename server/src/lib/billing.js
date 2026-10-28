@@ -12,6 +12,17 @@
 import { prisma } from '../db.js';
 import { getModelRate, computeCostUsd } from './modelPricing.js';
 import { splitOvershoot } from './billingClamp.js';
+import { CREDIT_RATE_USD, creditExpiryMonths } from './creditPolicy.js';
+import { expiredPurchasedCredits, round4 } from './creditExpiry.js';
+import { currentBuildProjectId } from './buildBudget.js';
+import { reserveBuildCredits, releaseBuildCredits } from './buildBudgetStore.js';
+import { SIGNUP_CREDITS } from './billingLedger.js';
+
+// The face rate moved to creditPolicy.js on 2026-10-27 so the no-install guards
+// job can assert it without reaching Prisma through this file. Re-exported here
+// because every existing importer (`usdToCredits`, ledger scripts, callers)
+// imports it from billing.js and adding a second name is not worth a breakage.
+export { CREDIT_RATE_USD } from './creditPolicy.js';
 
 // Re-exported so existing importers keep working. The logic lives in
 // billingClamp.js, which imports nothing at all, so the no-install CI guard can
@@ -59,7 +70,8 @@ export async function resolveBillingMarkup(model) {
   return getModelMarkup(isDeepSeekModel(model) ? 'deepseek-v4-pro' : model);
 }
 
-export const CREDIT_RATE_USD = 0.005; // $5 / 1,000 credits, decided 2026-09-01
+// CREDIT_RATE_USD is imported from creditPolicy.js and re-exported above — the
+// decided $0.005/credit rate has one home, not two.
 
 // Pre-call estimates are deliberately biased high: reconciliation should
 // usually refund a small amount back to the user, never surprise them with
@@ -181,6 +193,88 @@ export async function estimatePreCallCredits(prompt, role, model, maxTokens) {
   return usdToCredits(estimatedUsd, markup);
 }
 
+// ── PURCHASED-CREDIT EXPIRY (2026-10-27) ─────────────────────────────────────
+//
+// The RULE is in lib/creditExpiry.js (import-free, guard-tested): only purchased
+// credits expire; consumption is allocated to purchases oldest-first; signup
+// grants are exempt. This function is the database half.
+//
+// Config-gated: with CREDITS_EXPIRY_MONTHS unset (the default until Rob decides)
+// it returns before touching the database, so shipping it changes nothing.
+//
+// Idempotence is arithmetic, not a flag. The expiry row it writes has
+// status='expired' and NEGATIVE credits, and it is passed back into the rule as
+// consumed credit on the next run, so re-running cannot expire the same lot
+// twice.
+export async function applyExpiredPurchasedCredits(userId, { now = new Date() } = {}) {
+  const months = creditExpiryMonths();
+  if (months == null || !userId) return 0;
+
+  try {
+    return await prisma.$transaction(async (tx) => {
+      // One writer per account at a time: two concurrent expiries must not both
+      // compute the same lots as outstanding and take them twice.
+      await tx.$queryRaw`SELECT id FROM users WHERE id = ${userId} FOR UPDATE`;
+
+      const purchases = await tx.creditTransaction.findMany({
+        where: { created_by_id: userId, status: 'paid', credits: { gt: 0 } },
+        select: { credits: true, created_date: true },
+        orderBy: { created_date: 'asc' },
+      });
+      const charged = await tx.usageEvent.aggregate({
+        where: { created_by_id: userId },
+        _sum: { credits_charged: true },
+      });
+      const alreadyExpired = await tx.creditTransaction.aggregate({
+        where: { created_by_id: userId, status: 'expired' },
+        _sum: { credits: true },
+      });
+      const account = await tx.user.findUnique({ where: { id: userId }, select: { credit_balance: true } });
+      if (!account) return 0;
+
+      const { credits, remainingSignup } = expiredPurchasedCredits({
+        purchases,
+        signupCredits: SIGNUP_CREDITS,
+        consumedCredits: Number(charged?._sum?.credits_charged || 0),
+        // The sum is negative; the rule wants the positive amount already expired.
+        expiredCredits: Math.abs(Number(alreadyExpired?._sum?.credits || 0)),
+        months,
+        now,
+      });
+      if (credits <= 0) return 0;
+
+      // Never take more than the account actually holds, and never take the part
+      // of the signup grant the rule says is still unspent. The second half is
+      // belt-and-braces for a manual balance adjustment that disagrees with the
+      // lots: expiry under-takes rather than ever touching a free grant.
+      const balance = Number(account.credit_balance || 0);
+      const take = round4(Math.min(credits, Math.max(0, balance - remainingSignup)));
+      if (take <= 0) return 0;
+
+      await tx.creditTransaction.create({
+        data: {
+          created_by_id: userId,
+          credits: -take,
+          amount_usd: 0,
+          intended_net_usd: 0,
+          status: 'expired',
+        },
+      });
+      await tx.user.update({
+        where: { id: userId },
+        data: { credit_balance: { decrement: take } },
+      });
+      console.log(`[credits] expired ${take.toFixed(4)} purchased credits for ${userId} (${months}-month window)`);
+      return take;
+    });
+  } catch (err) {
+    // Expiry is policy, not a reason to fail a purchase or an AI call. The next
+    // run retries; the balance is unchanged.
+    console.warn(`[credits] expiry check failed for ${userId}: ${err?.message || err}`);
+    return 0;
+  }
+}
+
 // Atomically deducts `estimatedCredits` from the user's balance, but only if
 // the balance covers it -- a single conditional SQL UPDATE (via Prisma's
 // updateMany + a `gte` filter in the WHERE clause), so two concurrent calls
@@ -190,12 +284,35 @@ export async function estimatePreCallCredits(prompt, role, model, maxTokens) {
 // Whether a call should reserve AT ALL is a separate rule and lives in
 // lib/creditPolicy.js — import-free, so a guard can test it without dragging
 // Prisma into the no-install job.
-export async function reserveCredits(userId, estimatedCredits) {
-  const result = await prisma.user.updateMany({
-    where: { id: userId, credit_balance: { gte: estimatedCredits } },
-    data: { credit_balance: { decrement: estimatedCredits } },
-  });
+//
+// 2026-10-27 — `options.projectId` (defaulted from the build's async context)
+// checks and counts the per-build ceiling in one atomic reservation BEFORE the
+// balance update, and releases it if the balance update cannot proceed. The
+// build loop is unchanged; the rule lives in the one reservation path every AI
+// call already goes through.
+export async function reserveCredits(userId, estimatedCredits, { projectId = currentBuildProjectId() } = {}) {
+  // Expiry is policy, not a reason to fail a purchase or an AI call: the helper
+  // logs a failure and returns 0 without touching the balance.
+  await applyExpiredPurchasedCredits(userId);
+
+  // Throws BuildCeilingExceededError (402) before the balance is touched.
+  const buildReservation = projectId
+    ? await reserveBuildCredits(projectId, estimatedCredits)
+    : null;
+
+  let result;
+  try {
+    result = await prisma.user.updateMany({
+      where: { id: userId, credit_balance: { gte: estimatedCredits } },
+      data: { credit_balance: { decrement: estimatedCredits } },
+    });
+  } catch (err) {
+    if (buildReservation) await releaseBuildCredits(projectId, estimatedCredits);
+    throw err;
+  }
+
   if (result.count === 0) {
+    if (buildReservation) await releaseBuildCredits(projectId, estimatedCredits);
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { credit_balance: true } });
     throw new InsufficientCreditsError(estimatedCredits, Number(user?.credit_balance ?? 0));
   }

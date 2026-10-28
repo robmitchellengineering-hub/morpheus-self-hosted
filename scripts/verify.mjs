@@ -99,6 +99,7 @@ const HARD = [
   'verify-verifier-coverage.mjs',
   'verify-ai-cost-claims.mjs',
   'verify-billing-ledger-math.mjs',
+  'verify-credits-policy.mjs',
   'verify-github-reconnect.mjs',
   'verify-workspace-search.mjs',
   'verify-onramp.mjs',

@@ -1473,6 +1473,13 @@ export const MUTATIONS = [
     replace: 'export const SIGNUP_CREDITS = 201;',
   },
   {
+    guard: 'verify-credits-policy.mjs',
+    file: 'server/src/lib/creditPolicy.js',
+    why: 'Changes the decided face rate without changing the policy document, so the code and the published conversion disagree — the exact drift the guard exists to catch.',
+    find: 'export const CREDIT_RATE_USD = 0.005;',
+    replace: 'export const CREDIT_RATE_USD = 0.006;',
+  },
+  {
     guard: 'verify-provider-spend.mjs',
     file: 'server/src/lib/providerSpend.js',
     why: 'Reverses the delta so a credit reads as spend and real spend reads as a top-up — the exact confusion the module exists to prevent.',
@@ -4555,14 +4562,14 @@ export const MUTATIONS = [
     guard: 'verify-guard-count-copy.mjs',
     file: 'src/lib/morpheusCapabilities.json',
     why: 'Raises the published guard count above the real one, so the drift this guard exists to catch would read as accurate copy.',
-    find: '134 automated guards',
+    find: '135 automated guards',
     replace: '999 automated guards',
   },
   {
     guard: 'verify-guard-count-copy.mjs',
     file: 'src/pages/Projects.jsx',
     why: 'Raises the published mutation-test count above the real one, so the second drift this guard pins would pass un-noticed.',
-    find: '507 recorded mutation tests',
+    find: '508 recorded mutation tests',
     replace: '999 recorded mutation tests',
   },
   {

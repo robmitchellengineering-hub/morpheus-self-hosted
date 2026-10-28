@@ -13,6 +13,8 @@ import { createSnapshot, applyFileOperations, logUsage } from '../lib/projectUti
 import { buildToolchain } from '../lib/toolchain.js';
 import { reviewAndRetry, formatReviewChatBlock } from '../lib/reviewer.js';
 import { getContextSummary, formatContextSummaryBlock } from '../lib/contextSummary.js';
+import { enterBuild, exitBuild } from '../lib/buildBudget.js';
+import { continueBuild, finishBuild } from '../lib/buildBudgetStore.js';
 
 // ─── OUTPUT MEASUREMENT ──────────────────────────────────────────────────────
 // Tracks actual output sizes per agent phase so we can see how much of the
@@ -97,6 +99,13 @@ export default async function handler({ user, body }) {
   const project = await prisma.project.findFirst({ where: { id: projectId, created_by_id: user.id } });
   if (!project) throw Object.assign(new Error('Project not found'), { status: 404 });
 
+  // Per-build spend ceiling (docs/CREDITS-POLICY.md §8). This is the unattended
+  // case: continue the project's budget across steps rather than resetting it,
+  // and clear it only when the step reports the build complete. The context is
+  // what the reservation path reads; the planner/coder/reviewer code is untouched.
+  enterBuild(projectId);
+  await continueBuild(projectId);
+
   // 2026-09-02 fix: ProjectFile's real uniqueness is [project_id, path]
   // (schema.prisma), not per-user. Filtering by created_by_id: user.id here
   // hid files with a different created_by_id from applyFileOperations()'s
@@ -178,6 +187,8 @@ ${historyContext}`;
     const toolchain = buildToolchain(planner.provider, { planner: planner.model });
     const outputMetrics = { planner: plannerMetrics, coder: { totalChars: 0, totalTokens: 0, perFile: [] }, totalEstTokens: plannerMetrics.estTokens };
     await logUsage(user.id, 'autonomous_step', projectId, project.name, { isComplete: true, phase: 'planner-only', fileCount: 0, outputMetrics, ...toolchain });
+    await finishBuild(projectId);
+    exitBuild();
     return { reply, fileOperations: [], isComplete: true, plannerAssessment: plannerResult.assessment, outputMetrics };
   }
 
@@ -277,5 +288,7 @@ ${historyContext}`;
   await logUsage(user.id, 'autonomous_step', projectId, project.name, { isComplete: finalComplete, fileCount: fileOps.length, reviewed: !!reviewerModel, reviewApproved, truncated, outputMetrics, ...toolchain });
   // `fileOperations` is a MIXED list (refusals, skips and failures alongside real writes), so the paths
   // that actually changed travel beside it — every function that ships an op list ships this too.
+  if (finalComplete) await finishBuild(projectId);
+  exitBuild();
   return { reply, fileOperations: appliedOps, changedPaths: appliedPaths(appliedOps), isComplete: finalComplete, truncated, plannerAssessment: plannerResult.assessment, reviewStatus: { approved: reviewApproved, issues: reviewIssues, summary: reviewSummary }, outputMetrics };
 }

@@ -10,9 +10,11 @@
 // server-side from lib/billing.js's TOKEN_BLOCKS by index; the client only
 // ever sends *which* block it wants, never an amount — so a tampered
 // request can't buy credits below the real price.
-import { TOKEN_BLOCKS, computeGrossedUpCharge, FIRST_PURCHASE_RECOUP_USD, isFirstTokenPurchase } from '../lib/billing.js';
+import { TOKEN_BLOCKS, computeGrossedUpCharge, FIRST_PURCHASE_RECOUP_USD, isFirstTokenPurchase, applyExpiredPurchasedCredits } from '../lib/billing.js';
 import { stripeFetch, encodeForm } from '../lib/stripe.js';
 import { safeReturnUrl } from '../lib/corsOrigin.js';
+import { prisma } from '../db.js';
+import { creditBalanceCap, wouldExceedBalanceCap } from '../lib/creditPolicy.js';
 
 export default async function handler({ user, body, req }) {
   if (!user) throw Object.assign(new Error('Sign in to buy credits'), { status: 401 });
@@ -35,6 +37,27 @@ export default async function handler({ user, body, req }) {
   const returnBase = (typeof req?.get === 'function' ? req.get('origin') : '') || process.env.FRONTEND_URL || '';
   const safeSuccess = safeReturnUrl(successUrl, '/?credits=success', returnBase);
   const safeCancel = safeReturnUrl(cancelUrl, '/?credits=cancelled', returnBase);
+
+  // Expiry is applied before the cap so the cap judges the balance the customer
+  // actually has, and before the Stripe session so nobody pays for credits the
+  // policy would refuse. Gated on CREDITS_EXPIRY_MONTHS: unset = a no-op.
+  await applyExpiredPurchasedCredits(user.id);
+
+  // Balance cap, enforced at purchase creation (docs/CREDITS-POLICY.md §6).
+  // A paid purchase that races an existing checkout is honoured by the webhook
+  // rather than confiscated — this is the gate the customer sees, not a clawback.
+  const cap = creditBalanceCap();
+  if (cap != null) {
+    const account = await prisma.user.findUnique({ where: { id: user.id }, select: { credit_balance: true } });
+    const balance = Number(account?.credit_balance || 0);
+    if (wouldExceedBalanceCap(balance, block.credits, cap)) {
+      const next = Math.round((balance + block.credits) * 10000) / 10000;
+      throw Object.assign(
+        new Error(`This purchase would take your balance to ${next} credits, over the ${cap}-credit account cap. Contact support to raise the cap.`),
+        { status: 409, code: 'CREDIT_BALANCE_CAP', cap, balance, credits: block.credits },
+      );
+    }
+  }
 
   const isFirstPurchase = await isFirstTokenPurchase(user.id);
   const intendedNetUsd = isFirstPurchase ? block.intendedNetUsd + FIRST_PURCHASE_RECOUP_USD : block.intendedNetUsd;
