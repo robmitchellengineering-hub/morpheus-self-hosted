@@ -36,7 +36,10 @@ export function addMonths(date, months) {
   const from = new Date(date);
   if (Number.isNaN(from.getTime())) return null;
   const total = Number(months);
-  if (!Number.isFinite(total)) return null;
+  // Whole months only. A fraction would be silently truncated by the
+  // Date.UTC month arithmetic below, which is exactly the "shorter window"
+  // this module refuses to invent.
+  if (!Number.isFinite(total) || !Number.isInteger(total)) return null;
   const day = from.getUTCDate();
   const target = new Date(Date.UTC(
     from.getUTCFullYear(),
@@ -91,11 +94,12 @@ export function expiredPurchasedCredits({
   const signup = round4(signupRaw);
   const window = Number(months);
   // A window shorter than one whole month is not a window: `addMonths` would
-  // truncate it to zero and expire the lot at the instant it was bought. The
-  // config parser already refuses a fraction; this is the same rule for any
-  // direct caller (a test, a future scheduler) so the safety does not depend on
-  // which entry point reached the arithmetic.
-  if (!Number.isFinite(window) || window < 1) {
+  // truncate it to zero and expire the lot at the instant it was bought, and a
+  // fractional window such as 1.5 would silently become one month. The config
+  // parser already refuses a fraction; this is the same rule for any direct
+  // caller (a test, a future scheduler) so the safety does not depend on which
+  // entry point reached the arithmetic.
+  if (!Number.isFinite(window) || !Number.isInteger(window) || window < 1) {
     return { credits: 0, remainingSignup: signup, lots: [] };
   }
 

@@ -133,6 +133,10 @@ check('expiry: a fraction is not an instant window, it is off',
   creditExpiryMonths({ CREDITS_EXPIRY_MONTHS: '0.5' }), null);
 check('…and the arithmetic refuses a sub-month window even when called directly',
   expiredPurchasedCredits({ purchases: [{ credits: 100, created_date: jan }], signupCredits: 200, months: 0.5, now: jan }).credits, 0);
+check('…nor does it truncate a fraction above one month',
+  expiredPurchasedCredits({ purchases: [{ credits: 100, created_date: jan }], signupCredits: 200, months: 1.5, now: jul }).credits, 0);
+check('…and a fractional addMonths is refused rather than truncated',
+  addMonths(jan, 1.5), null);
 check('ceiling: a positive N is used', buildCeilingCredits({ CREDITS_BUILD_CEILING: '250' }), 250);
 check('ceiling: zero is off', buildCeilingCredits({ CREDITS_BUILD_CEILING: '0' }), null);
 
