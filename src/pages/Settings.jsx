@@ -14,7 +14,7 @@ import { Switch } from '@/components/ui/switch';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/lib/AuthContext';
 
-// Guided Free Setup — Gemini's official OpenAI-compatibility endpoint. Saved
+// Guided Setup — Gemini's official OpenAI-compatibility endpoint. Saved
 // under the hood exactly like a manual Custom setup (ai_mode:'custom' +
 // these two values) — the guided flow only removes the "what do I even put
 // in Base URL" friction, it doesn't add a new code path. ai_model 'auto'
@@ -51,7 +51,7 @@ export default function Settings() {
   const [aiModel, setAiModel] = useState('');
   // UI-only: which panel the AI Provider section shows. Distinct from
   // aiMode (the actual persisted field, only ever 'default' | 'custom') so
-  // picking "Guided Free Setup" can't accidentally save an ai_mode value
+  // picking "Guided Setup" can't accidentally save an ai_mode value
   // resolveEndpoint() doesn't recognise.
   const [providerMode, setProviderMode] = useState('default');
   const [keyTest, setKeyTest] = useState(null); // { testing } | { ok, message }
@@ -333,7 +333,7 @@ export default function Settings() {
                 label="MODE"
                 options={[
                   { value: 'default', label: 'Default (platform)' },
-                  { value: 'guided', label: 'Guided Free Setup — Gemini (free)' },
+                  { value: 'guided', label: 'Guided Setup — your Gemini key' },
                   { value: 'custom', label: 'Custom OpenAI-compatible endpoint' },
                 ]}
                 triggerClassName="w-full mb-4"
@@ -349,7 +349,7 @@ export default function Settings() {
                       </a>{' '}
                       and sign in with any Google account.
                     </li>
-                    <li>Click <span className="text-ink-strong">Create API key</span> — it's free, no card required.</li>
+                    <li>Click <span className="text-ink-strong">Create API key</span> — no card required.</li>
                     <li>Copy the key and paste it below.</li>
                   </ol>
                   <div>
@@ -380,7 +380,7 @@ export default function Settings() {
                     {keyTest?.ok === false && <span className="text-xs text-red-400 flex items-center gap-1"><AlertTriangle size={12} /> {keyTest.message || 'Key rejected'}</span>}
                   </div>
                   <p className="text-xs text-ink-strong">
-                    // ~5,000 free grounded requests/month on the Gemini 3 family, then usage-billed to this key directly by Google — never through Morpheus. Rate-limited under heavy autonomous builds; switch to platform default if you hit that.
+                    // ~5,000 grounded requests/month on the Gemini 3 family's own quota, then Google bills this key directly — not through Morpheus. Morpheus still charges 1 credit per call for the plumbing; a provider key never removes that charge. Rate-limited under heavy autonomous builds; switch to platform default if you hit that.
                   </p>
                 </div>
               ) : providerMode === 'custom' ? (
@@ -397,13 +397,13 @@ export default function Settings() {
                       // e.g. https://api.openai.com/v1 · http://localhost:11434/v1 (Ollama) · https://openrouter.ai/api/v1 · https://api.moonshot.ai/v1 (Kimi K3)
                     </p>
                     <div className="mt-2 border border-primary/20 bg-primary/5 p-2.5 text-xs text-ink-strong space-y-1">
-                      <p className="text-primary/70 font-bold uppercase tracking-wider text-[10px]">Free-tier providers:</p>
-                      <p>// Google AI Studio — free Gemini Flash, generous limits</p>
-                      <p>// Groq — free fast inference (Llama, Mixtral)</p>
-                      <p>// OpenRouter — some free models available</p>
-                      <p>// Ollama — local, no API key, zero cost (needs GPU)</p>
-                      <p className="pt-0.5">// Moonshot AI (Kimi K3) — 1M context, strong at agentic coding. Not free — $1 min top-up required, then pay-as-you-go.</p>
-                      <p className="text-yellow-500/60 pt-0.5">// Free tiers have rate limits — heavy autonomous builds may hit them. Use platform default for reliability.</p>
+                      <p className="text-primary/70 font-bold uppercase tracking-wider text-[10px]">Bring-your-own-key providers:</p>
+                      <p>// Google AI Studio — Gemini Flash; your key pays Google</p>
+                      <p>// Groq — fast inference (Llama, Mixtral); your key pays Groq</p>
+                      <p>// OpenRouter — models from many providers; your key pays them</p>
+                      <p>// Ollama — local, no provider API key (needs GPU); no provider bill, but Morpheus still charges 1 credit per call</p>
+                      <p className="pt-0.5">// Moonshot AI (Kimi K3) — 1M context, strong at agentic coding. Paid: $1 min top-up required, then pay-as-you-go.</p>
+                      <p className="text-yellow-500/60 pt-0.5">// A provider key covers the provider's bill, not Morpheus's plumbing: every call still costs 1 credit. Provider quotas have rate limits — heavy autonomous builds may hit them. Use platform default for reliability.</p>
                     </div>
                   </div>
                   <div>
@@ -460,8 +460,8 @@ export default function Settings() {
                 // Every agent in the pipeline is individually addressable. All default to automatic — override only when you want a specific model for a specific role. Max think power is enabled (no output token cap).
               </p>
               <div className="mb-4 border border-primary/20 bg-primary/5 p-2.5 text-xs text-ink-strong space-y-1">
-                <p className="text-primary/70 font-bold uppercase tracking-wider text-[10px]">Free-tier optimisation:</p>
-                <p>// Best free-tier setup: leave all on Automatic (lowest credit cost)</p>
+                <p className="text-primary/70 font-bold uppercase tracking-wider text-[10px]">Credit optimisation:</p>
+                <p>// Lowest-credit setup: leave all on Automatic (lowest credit cost)</p>
                 <p>// Or set Planner → Gemini 3 Flash, Coder → GPT 5 Mini (lowest cost overrides)</p>
                 <p>// Reviewer &amp; Diagnosis can stay Automatic — they run less frequently</p>
                 <p className="text-yellow-500/60">// Higher-think models (Opus, Sonnet) cost significantly more credits per step</p>

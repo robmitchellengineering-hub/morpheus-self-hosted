@@ -49,7 +49,17 @@ export default async function handler({ user, body, req }) {
   const cap = creditBalanceCap();
   if (cap != null) {
     const account = await prisma.user.findUnique({ where: { id: user.id }, select: { credit_balance: true } });
-    const balance = Number(account?.credit_balance || 0);
+    // Fail closed: a cap that is configured but cannot be judged must refuse the
+    // purchase, never fall back to "no balance, no problem".
+    if (!account) {
+      throw Object.assign(new Error('Your account could not be read, so the purchase was refused rather than allowed past the balance cap.'), {
+        status: 409,
+        code: 'CREDIT_BALANCE_CAP',
+        cap,
+        credits: block.credits,
+      });
+    }
+    const balance = Number(account.credit_balance);
     if (wouldExceedBalanceCap(balance, block.credits, cap)) {
       const next = Math.round((balance + block.credits) * 10000) / 10000;
       throw Object.assign(

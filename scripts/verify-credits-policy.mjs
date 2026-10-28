@@ -205,6 +205,8 @@ check('…and refuses a purchase that would exceed it',
   /wouldExceedBalanceCap\(balance, block\.credits, cap\)/.test(checkout), true);
 check('…with a stable machine-readable code',
   /CREDIT_BALANCE_CAP/.test(checkout), true);
+check('…and refuses when the balance itself cannot be read',
+  /if \(!account\)/.test(checkout), true);
 check('…before the Stripe session is created',
   checkout.indexOf('wouldExceedBalanceCap') < checkout.indexOf("stripeFetch('/checkout/sessions'"), true);
 check('the refusal is a 4xx, not a silent clamp',
@@ -296,6 +298,12 @@ const FREE_PATH_CLAIMS = [
   /\bno\s+(?:cost|charge|fee)\b[^.\n]{0,30}\b(?:per\s+call|ai\s+call|for\s+ai|on\s+your\s+key)\b/i,
   /\bno\s+expir(?:y|e|es|ation)\b/i,
   /\bcredits?\s+(?:never|do\s+not|don'?t|will\s+not|won'?t)\s+expire\b/i,
+  // The AI-provider settings page used to call the own-key route "Guided Free
+  // Setup — Gemini (free)" and list "Free-tier providers". Those are specific
+  // enough to name without matching "free-tier hosting" elsewhere in the UI.
+  /\bguided\s+free\s+setup\b/i,
+  /\bfree-tier\s+providers?\b/i,
+  /\bbest\s+free-tier\s+setup\b/i,
 ];
 const copyHits = [];
 for (const file of COPY_FILES) {
@@ -306,6 +314,10 @@ for (const file of COPY_FILES) {
   }
 }
 check('no user-facing file promises a free AI path or no expiry', copyHits, []);
+// The own-key path is the one customers most reasonably read as "free". The
+// settings page must state the flat meter, not merely avoid a banned phrase.
+check('the AI-provider settings say an own-key call still costs a credit',
+  /still\s+(?:charges|costs)\s+1\s+credit/i.test(read('src/pages/Settings.jsx')), true);
 // The generated metadata is the copy search engines and AI tools quote. It must state
 // the closed own-key path in the same words the meter implements, not merely avoid the
 // banned phrase — a file can stop saying "free forever" and still say nothing useful.

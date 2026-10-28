@@ -65,7 +65,9 @@ take the balance above the cap, `createTokenCheckout` refuses to create the Stri
 with `409` / `CREDIT_BALANCE_CAP`. The customer is not charged.
 
 - Configuration: `CREDITS_BALANCE_CAP` (credits).
-- Unset, empty, `0`, negative or unreadable = **no cap** — the mechanism is off.
+- Unset, empty, `0`, negative or unreadable configuration = **no cap** — the mechanism is off.
+- When a cap *is* configured, an unreadable balance or limit at purchase time **refuses** the
+  purchase (fail closed); it never silently disables the cap.
 - A paid purchase that races an existing checkout is honoured rather than confiscated; the
   checkout gate is the enforcement point the customer sees. Credits already paid for are
   never deleted to satisfy a cap.

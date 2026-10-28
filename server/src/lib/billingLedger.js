@@ -12,10 +12,11 @@
 //
 //   * The retail formula holds EXACTLY. A sampled row charged 14.9016 credits; the formula
 //     (tokens × the resolved rate × markup ÷ $0.005) gives 14.9016. So the meter is self-consistent.
-//   * `credit_balance == 200 + purchases − charged` holds for every account EXCEPT one, and that one
+//   * `credit_balance == 200 + purchases − charged − expired` holds for every account EXCEPT one, and that one
 //     is the documented absorption case: the account exhausted, `reconcileCredits` refuses to take a
 //     balance below zero, and the remainder is absorbed as platform cost. So the invariant needs that
-//     case named, not an equality that would cry wolf on the intended behaviour.
+//     case named, not an equality that would cry wolf on the intended behaviour. `expired` is a
+//     fourth term only once `CREDITS_EXPIRY_MONTHS` is set; it is zero in the measurement above.
 //   * One admin row was charged 5.1348 credits on 2026-09-01 — the first day of usage, before the
 //     role exemption was in force. The check therefore REPORTS it rather than failing on it: the role
 //     a user held when a call was made is not recorded, so it cannot be verified retroactively.
