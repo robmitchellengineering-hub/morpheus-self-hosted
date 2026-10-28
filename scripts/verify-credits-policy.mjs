@@ -127,6 +127,9 @@ check('a purchase below the cap is allowed', wouldExceedBalanceCap(700, 200, 100
 check('…a purchase that lands exactly on the cap is allowed', wouldExceedBalanceCap(800, 200, 1000), false);
 check('…a purchase over the cap is refused', wouldExceedBalanceCap(900, 200, 1000), true);
 check('…and no cap never refuses', wouldExceedBalanceCap(1_000_000, 1, null), false);
+check('…an unreadable balance fails closed when a cap is set',
+  wouldExceedBalanceCap(Number.NaN, 200, 1000), true);
+check('…as does an unreadable cap', wouldExceedBalanceCap(900, 200, Number.NaN), true);
 
 // The placeholders are Rob's decision, and the document has to say so rather
 // than shipping a number somebody invented in a pull request.
@@ -255,6 +258,15 @@ const walk = (dir) => {
   }
 };
 walk('src');
+// The static assets are customer-facing too. `public/` is what actually ships to
+// Netlify, and `index.html` is the shell every route starts from.
+walk('public');
+COPY_FILES.push('index.html');
+// And the generator that writes the page's title, JSON-LD and llms.txt. Scanning only
+// the files it outputs would miss the line a search engine or AI tool actually quotes:
+// seo-static.mjs carried "free forever on your own AI provider key" while every src/
+// file had already been corrected.
+COPY_FILES.push('scripts/seo-static.mjs');
 check('the copy scan found files to judge (parser sanity)', COPY_FILES.length > 50, true);
 
 const FREE_PATH_CLAIMS = [
@@ -275,6 +287,11 @@ for (const file of COPY_FILES) {
   }
 }
 check('no user-facing file promises a free AI path or no expiry', copyHits, []);
+// The generated metadata is the copy search engines and AI tools quote. It must state
+// the closed own-key path in the same words the meter implements, not merely avoid the
+// banned phrase — a file can stop saying "free forever" and still say nothing useful.
+check('the generated SEO pricing line says an own-key call costs a credit',
+  /own AI provider key, a call costs 1 credit/i.test(read('scripts/seo-static.mjs')), true);
 
 // ═══ 7. TERMS: CREDIT = SERVICE; OWNERSHIP = OUTPUT ONLY ════════════════════
 console.log('\n7. terms say a credit is a service unit and ownership is the output');

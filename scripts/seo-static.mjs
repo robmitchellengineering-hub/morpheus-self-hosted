@@ -84,7 +84,11 @@ const hazardCount = (readFileSync(join(ROOT, 'KNOWN-HAZARDS.md'), 'utf8').match(
 // Verified against the running system: the grant is live and 6 accounts hold exactly 200
 // credits (reality.mjs), and billing.js carries the grant constant. The subscription line
 // matches what the code does, not what the financial reports claimed.
-const PRICING = 'No subscription. Every account starts with 200 free credits — enough to plan, build and ship a real first app — then pay-as-you-go, or free forever on your own AI provider key.';
+//
+// The own-key path is METERED: `lib/creditPolicy.js` charges every own-key call 1 credit,
+// because the plumbing is still ours. This is the line search engines and AI tools quote, so
+// it must say what the meter does — `scripts/verify-credits-policy.mjs` asserts it.
+const PRICING = 'No subscription. Every account starts with 200 free credits — enough to plan, build and ship a real first app — then pay-as-you-go. On your own AI provider key, a call costs 1 credit: your key pays the provider, and the credit covers Morpheus\'s plumbing.';
 
 const esc = (s) => String(s)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')

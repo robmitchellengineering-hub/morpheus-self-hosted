@@ -188,11 +188,19 @@ export function buildCeilingCredits(env) {
   return readPositiveSetting(runtimeEnv(env), CREDIT_BUILD_CEILING_ENV);
 }
 
-/** Would crediting `credits` take `balance` over `cap`? null cap = never. */
+/**
+ * Would crediting `credits` take `balance` over `cap`? null cap = never.
+ *
+ * Fail CLOSED when a cap is configured but the numbers cannot be read: an
+ * unreadable balance or limit must refuse the purchase, not silently disable
+ * the cap. This is the same rule `withinBuildCeiling` applies to a build.
+ */
 export function wouldExceedBalanceCap(balance, credits, cap) {
   if (cap == null) return false;
+  const limit = Number(cap);
   const next = Number(balance ?? 0) + Number(credits ?? 0);
-  return Number.isFinite(next) && next > Number(cap);
+  if (!Number.isFinite(limit) || !Number.isFinite(next)) return true;
+  return next > limit;
 }
 
 /**
