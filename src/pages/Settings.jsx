@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Loader2, Eye, EyeOff, Save, Check, Cpu, Brain, Zap, ShieldCheck, Stethoscope, Volume2, Palette, Sparkles, Sun, Moon, User, LogOut, ExternalLink, AlertTriangle } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
+import { ArrowLeft, Loader2, Eye, EyeOff, Save, Check, Cpu, Brain, Zap, ShieldCheck, Stethoscope, Volume2, Palette, Sparkles, Sun, Moon, User, LogOut, ExternalLink, AlertTriangle, KeyRound } from 'lucide-react';
 import DangerZone from '@/components/matrix/DangerZone';
 import { base44 } from '@/api/base44Client';
 import MatrixRain from '@/components/matrix/MatrixRain';
@@ -209,6 +209,21 @@ export default function Settings() {
                 >
                   <LogOut size={14} /> SIGN OUT
                 </button>
+              </div>
+
+              {/* THE LICENCES PAGE EXISTED AND WAS UNREACHABLE. `/licences` was routed and built, but no link to it
+                  existed anywhere in the app — so the only way to it was to type the URL. An account's SDK licences
+                  are an account matter, so the way in lives here. */}
+              <div className="mt-4 pt-4 border-t border-primary/20 flex items-center justify-between gap-4 flex-wrap">
+                <span className="text-xs text-ink-strong">
+                  // The Valiant Verification SDK licences this account holds — plan, seats, expiry, and revoke.
+                </span>
+                <Link
+                  to="/licences"
+                  className="flex items-center gap-2 px-4 py-2 border border-primary/30 text-primary/70 hover:border-primary hover:text-primary transition-colors text-xs font-display tracking-wider shrink-0"
+                >
+                  <KeyRound size={14} /> LICENCES
+                </Link>
               </div>
             </section>
 
