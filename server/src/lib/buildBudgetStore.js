@@ -26,6 +26,8 @@ import {
   buildBudgetKey,
   buildConsentKey,
   buildCeilingAllows,
+  buildReservationAmount,
+  parseBuildSpend,
 } from './buildBudget.js';
 
 // A budget older than this is a different build. `autonomousBuildStep` is one
@@ -56,10 +58,9 @@ export class BuildCeilingExceededError extends Error {
   }
 }
 
-/** The stored value is a decimal string; anything unreadable is "no spend", never NaN. */
+/** The stored value is a decimal string; an unreadable one is refused, never treated as zero. */
 function parseSpent(raw) {
-  const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? n : 0;
+  return parseBuildSpend(raw);
 }
 
 function isStale(updatedDate) {
@@ -139,8 +140,15 @@ export async function reserveBuildCredits(projectId, requestedCredits) {
   const ceiling = buildCeilingCredits();
   if (ceiling == null || !projectId) return null;
 
-  const requested = Number(requestedCredits || 0);
-  if (!Number.isFinite(requested) || requested < 0) return null;
+  // Fail CLOSED, not open: an unreadable reservation must not bypass the
+  // ceiling. `null` here is a bug in the estimate, not a free step.
+  const requested = buildReservationAmount(requestedCredits);
+  if (requested == null) {
+    throw Object.assign(
+      new Error('This build step has an unreadable credit reservation, so it was refused rather than allowed to bypass the per-build ceiling.'),
+      { status: 402, code: 'BUILD_CEILING_EXCEEDED' },
+    );
+  }
 
   const key = buildBudgetKey(projectId);
   return prisma.$transaction(async (tx) => {
@@ -156,6 +164,12 @@ export async function reserveBuildCredits(projectId, requestedCredits) {
     `;
     const row = rows[0] || null;
     const spent = row && !isStale(row.updated_date) ? parseSpent(row.value) : 0;
+    if (spent == null) {
+      throw Object.assign(
+        new Error(`The stored build budget for this project is unreadable, so the step was refused rather than allowed to overspend. Clear platform_settings.${key} to start a new budget.`),
+        { status: 402, code: 'BUILD_CEILING_EXCEEDED' },
+      );
+    }
     const consent = await readConsent(tx, projectId);
 
     if (!buildCeilingAllows(spent, requested, ceiling, consent)) {
@@ -186,23 +200,43 @@ export async function reserveBuildCredits(projectId, requestedCredits) {
 }
 
 /**
- * Put back a reservation whose balance update could not proceed. Best effort:
- * the direction of error is deliberately conservative (a budget that over-counts
- * blocks early; one that under-counts overspends).
+ * Move the stored budget by `delta` credits. Positive adds spend, negative
+ * releases it; the value is clamped at zero.
+ *
+ * This is how the budget follows the ACTUAL charge, not just the pre-call
+ * estimate: `reserveCredits` reserves high, the provider bills less, and
+ * `reconcileCredits` calls this with the difference. Without it a failed call
+ * would keep its whole estimate against the build forever, and a long build
+ * would hit the ceiling while having spent far less.
+ *
+ * Best effort by design: bookkeeping must never fail the call that already
+ * returned. The direction of failure is the safe one — a budget that over-counts
+ * blocks early; one that under-counts can only overspend on the next call.
  */
-export async function releaseBuildCredits(projectId, credits) {
+export async function adjustBuildCredits(projectId, delta) {
   const ceiling = buildCeilingCredits();
   if (ceiling == null || !projectId) return;
-  const amount = Number(credits || 0);
-  if (!Number.isFinite(amount) || amount <= 0) return;
+  const amount = Number(delta ?? 0);
+  if (!Number.isFinite(amount) || amount === 0) return;
   try {
     await prisma.$executeRaw`
       UPDATE platform_settings
-      SET value = GREATEST(COALESCE(NULLIF(value, ''), '0')::numeric - ${amount}::numeric, 0)::text,
+      SET value = GREATEST(COALESCE(NULLIF(value, ''), '0')::numeric + ${amount}::numeric, 0)::text,
           updated_date = NOW()
       WHERE key = ${buildBudgetKey(projectId)}
     `;
   } catch {
-    // Bookkeeping must never fail the reservation that already returned.
+    // Bookkeeping must never fail the call that already returned.
   }
+}
+
+/**
+ * Put back a reservation whose balance update could not proceed. Kept as the
+ * named operation the reservation path uses; the arithmetic lives in
+ * `adjustBuildCredits`.
+ */
+export async function releaseBuildCredits(projectId, credits) {
+  const amount = Number(credits || 0);
+  if (!Number.isFinite(amount) || amount <= 0) return;
+  await adjustBuildCredits(projectId, -amount);
 }

@@ -34,7 +34,12 @@ import {
   withinBuildCeiling,
 } from '../server/src/lib/creditPolicy.js';
 import { addMonths, expiredPurchasedCredits, round4 } from '../server/src/lib/creditExpiry.js';
-import { buildBudgetKey, buildConsentKey } from '../server/src/lib/buildBudget.js';
+import {
+  buildBudgetKey,
+  buildConsentKey,
+  buildReservationAmount,
+  parseBuildSpend,
+} from '../server/src/lib/buildBudget.js';
 import { deferredRevenueSummary, purchasedOutstanding } from '../server/src/lib/creditLiability.js';
 import { MUTATIONS } from './guard-mutations.mjs';
 
@@ -70,6 +75,13 @@ const reservationStart = billing.indexOf('export async function reserveCredits')
 const reservationEnd = billing.indexOf('export async function reconcileCredits');
 const reservationPath = reservationStart >= 0 && reservationEnd > reservationStart
   ? billing.slice(reservationStart, reservationEnd)
+  : '';
+// Reconciliation is where the budget is trued up to the ACTUAL charge, so the
+// "reservation counted" check below is not enough on its own.
+const reconcileStart = billing.indexOf('export async function reconcileCredits');
+const reconcileEnd = billing.indexOf('export async function reconcileAgainstActualUsage');
+const reconcilePath = reconcileStart >= 0 && reconcileEnd > reconcileStart
+  ? billing.slice(reconcileStart, reconcileEnd)
   : '';
 
 // ═══ 1. THE FACE RATE IS ONE NUMBER, AND THE DOC SAYS THE SAME ONE ═══════════
@@ -196,12 +208,27 @@ check('…one that crosses it is refused', withinBuildCeiling(95, 10, 100), fals
 check('…explicit consent raises the allowance', withinBuildCeiling(100, 10, 100, 10), true);
 check('…no ceiling never refuses', withinBuildCeiling(1_000_000, 1, null), true);
 check('…an unreadable number refuses rather than passing', withinBuildCeiling(Number.NaN, 1, 100), false);
+check('an unreadable reservation is null, not zero', buildReservationAmount(Number.NaN), null);
+check('…a negative reservation is null too', buildReservationAmount(-1), null);
+check('…a real reservation is kept', buildReservationAmount('12.5'), 12.5);
+check('a corrupt stored budget is null, not a fresh zero', parseBuildSpend('lots'), null);
+check('…an empty stored budget is null, not a fresh zero', parseBuildSpend(''), null);
+check('…a real stored budget is kept', parseBuildSpend('12.5'), 12.5);
+check('the store fails closed on an unreadable reservation',
+  /buildReservationAmount\(requestedCredits\)/.test(budgetStore) && /if \(requested == null\)/.test(budgetStore), true);
+check('…and on an unreadable stored budget',
+  /parseSpent\(row\.value\)/.test(budgetStore) && /if \(spent == null\)/.test(budgetStore), true);
 check('reserveCredits reads the build from async context',
   /projectId\s*=\s*currentBuildProjectId\(\)/.test(reservationPath), true);
 check('…counts the reservation in the ceiling',
   /reserveBuildCredits\(projectId,\s*estimatedCredits\)/.test(reservationPath), true);
 check('…and releases it if the balance cannot cover the call',
   /releaseBuildCredits\(projectId,\s*estimatedCredits\)/.test(reservationPath), true);
+check('reconciliation moves the budget to the ACTUAL charge, not the estimate',
+  /const buildProjectId = currentBuildProjectId\(\)/.test(reconcilePath)
+    && /adjustBuildCredits\(buildProjectId,\s*-diff\)/.test(reconcilePath), true);
+check('…including the absorbed-overshoot path',
+  /await settleBuild\(\);[\s\S]{0,200}return \{ refunded: 0, absorbed: absorb \}/.test(reconcilePath), true);
 check('the store applies the shared ceiling rule', /if \(!buildCeilingAllows\(/.test(budgetStore), true);
 check('the store locks the budget row before judging it', /FOR UPDATE/.test(budgetStore), true);
 check('a chat build opens a fresh budget',
@@ -297,8 +324,12 @@ check('…account balances', /credit_balance/.test(report), true);
 check('…provider cost', /cost_usd/.test(report), true);
 check('…through the tested arithmetic', /deferredRevenueSummary/.test(report) && /purchasedOutstanding/.test(report), true);
 check('…for a monthly window', /WINDOW_DAYS\s*=\s*30/.test(report), true);
+check('…from production, never a local DATABASE_URL',
+  /process\.env\.PROD_DATABASE_URL/.test(report) && !/process\.env\.DATABASE_URL/.test(report), true);
 check('…and says "not verified" rather than passing without a credential',
   /process\.exit\(2\)/.test(report) && /NOT VERIFIED/.test(report), true);
+check('…and redacts a connection string rather than printing it',
+  /redacted/.test(report) && /postgres\(\?:ql\)\?/.test(report), true);
 
 // ═══ 9. THE GATE ACTUALLY RUNS THIS GUARD ═══════════════════════════════════
 console.log('\n9. this guard is registered where the gate and CI will run it');

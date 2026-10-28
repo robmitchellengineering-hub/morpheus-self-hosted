@@ -103,6 +103,11 @@ An unattended build cannot exceed **N credits** without explicit consent.
   under `build_budget_<projectId>` and reservations are counted against it in the AI
   reservation path (`reserveCredits`), not in the build loop. The build loop's planning,
   coding, reviewing and file application are unchanged.
+- The budget follows the **actual** charge: `reconcileCredits` moves it by the difference
+  between the reservation and the real cost, so a failed call refunds its reservation and
+  a call that cost less than estimated gives the slack back. A call that cost more than
+  reserved adds the overshoot, which blocks the *next* call. An unreadable reservation or
+  budget is refused rather than read as zero.
 - Explicit consent is a per-project `PlatformSetting`:
   `build_ceiling_consent_<projectId>` — a number of additional credits allowed for that
   project. Setting it is an explicit, auditable action; it is not inferred.
@@ -136,7 +141,8 @@ never a pass.
 - the cap is checked in the purchase path;
 - expiry is wired into the reservation and purchase paths, and signup credits are not a
   purchasable lot;
-- the ceiling is reached through the reservation path with a project id;
+- the ceiling is reached through the reservation path with a project id, and followed to
+  the actual charge on reconciliation;
 - no customer-facing copy promises a free AI path or "no expiry";
 - the terms carry the credit-is-service and ownership-is-output clauses;
 - the deferred-revenue report still reports sold vs consumed vs outstanding vs provider

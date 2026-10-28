@@ -30,19 +30,25 @@ const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
 const ENV_PATH = join(REPO, 'server', '.env.prodsql');
 const WINDOW_DAYS = 30;
 
+// A driver error can quote the connection string. Never print a credential.
+const redact = (value) => String(value ?? '').replace(/postgres(?:ql)?:\/\/\S+/gi, 'postgresql://[redacted]');
+
 function notVerified(message) {
-  console.log(`\n  NOT VERIFIED — ${message}`);
+  console.log(`\n  NOT VERIFIED — ${redact(message)}`);
   console.log('  This is never a pass: the deferred-revenue report was not produced.\n');
   process.exit(2);
 }
 
-let url = process.env.PROD_DATABASE_URL || process.env.DATABASE_URL || '';
+// Production only. Falling back to DATABASE_URL would let a local dev database
+// produce a report that looks like the real liability, which is worse than no
+// report; the same contract as verify-billing-ledger.mjs.
+let url = process.env.PROD_DATABASE_URL || '';
 if (!url && existsSync(ENV_PATH)) {
   const env = readFileSync(ENV_PATH, 'utf8');
   url = (env.match(/PROD_DATABASE_URL\s*=\s*"?([^"\n]+)"?/) || [])[1] || '';
 }
 if (!url) {
-  notVerified('no PROD_DATABASE_URL in server/.env.prodsql and no DATABASE_URL in the environment.');
+  notVerified('no PROD_DATABASE_URL in server/.env.prodsql or the environment.');
 }
 
 let Pool;

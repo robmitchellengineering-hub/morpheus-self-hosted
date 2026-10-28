@@ -15,7 +15,7 @@ import { splitOvershoot } from './billingClamp.js';
 import { CREDIT_RATE_USD, creditExpiryMonths } from './creditPolicy.js';
 import { expiredPurchasedCredits, round4 } from './creditExpiry.js';
 import { currentBuildProjectId } from './buildBudget.js';
-import { reserveBuildCredits, releaseBuildCredits } from './buildBudgetStore.js';
+import { reserveBuildCredits, releaseBuildCredits, adjustBuildCredits } from './buildBudgetStore.js';
 import { SIGNUP_CREDITS } from './billingLedger.js';
 
 // The face rate moved to creditPolicy.js on 2026-10-27 so the no-install guards
@@ -332,11 +332,23 @@ export async function reconcileCredits(userId, reservedCredits, actualCredits) {
   const diff = reservedCredits - actualCredits; // positive = refund back to the user
   if (Math.abs(diff) < 1e-9) return { refunded: 0, absorbed: 0 };
 
+  // The per-build budget follows the ACTUAL charge, not the pre-call estimate.
+  // `-diff` is positive when the call cost more than reserved and negative when
+  // it cost less (a refund, including a full refund for a call that never
+  // happened). Captured here so the write happens in the same context that made
+  // the reservation; `adjustBuildCredits` is a no-op outside a build and when
+  // the ceiling is off.
+  const buildProjectId = currentBuildProjectId();
+  const settleBuild = async () => {
+    if (buildProjectId) await adjustBuildCredits(buildProjectId, -diff);
+  };
+
   if (diff > 0) {
     await prisma.user.update({
       where: { id: userId },
       data: { credit_balance: { increment: diff } },
     });
+    await settleBuild();
     return { refunded: diff, absorbed: 0 };
   }
 
@@ -347,7 +359,10 @@ export async function reconcileCredits(userId, reservedCredits, actualCredits) {
     where: { id: userId, credit_balance: { gte: owed } },
     data: { credit_balance: { decrement: owed } },
   });
-  if (taken.count === 1) return { refunded: 0, absorbed: 0 };
+  if (taken.count === 1) {
+    await settleBuild();
+    return { refunded: 0, absorbed: 0 };
+  }
 
   // Short. Zero the balance (guarded, so a concurrent top-up is never wiped)
   // and absorb the remainder rather than carrying a negative balance.
@@ -367,6 +382,9 @@ export async function reconcileCredits(userId, reservedCredits, actualCredits) {
       + 'Balance clamped at 0 rather than going negative.',
     );
   }
+  // The call cost what it cost, even when the account could not cover it; the
+  // budget records the real spend so the next reservation is judged on truth.
+  await settleBuild();
   return { refunded: 0, absorbed: absorb };
 }
 

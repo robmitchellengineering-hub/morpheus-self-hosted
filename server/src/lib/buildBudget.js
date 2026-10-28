@@ -65,3 +65,32 @@ export function currentBuildProjectId() {
 export function buildCeilingAllows(spentCredits, requestedCredits, ceilingCredits, consentCredits = 0) {
   return withinBuildCeiling(spentCredits, requestedCredits, ceilingCredits, consentCredits);
 }
+
+/**
+ * A reservation amount, or `null` when it cannot be read.
+ *
+ * This exists so the storage half cannot fail OPEN. `withinBuildCeiling` already
+ * refuses a NaN, but a store that checked `Number.isFinite(requested)` and
+ * `return null`-ed before calling it would let an unreadable amount bypass the
+ * ceiling entirely — a guard passing on the pure rule while the wiring skipped
+ * it (H19). A negative amount is refused for the same reason.
+ */
+export function buildReservationAmount(value) {
+  const n = Number(value ?? 0);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+/**
+ * A stored spend value, or `null` when it cannot be read.
+ *
+ * The same fail-closed rule for the OTHER direction: a corrupted
+ * `platform_settings.value` must not be read as zero spend, because that
+ * forgets what the build has already used and lets it overspend. `null` makes
+ * the store refuse the step and name the row to clear, rather than silently
+ * starting the budget again.
+ */
+export function parseBuildSpend(raw) {
+  if (raw == null || String(raw).trim() === '') return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
