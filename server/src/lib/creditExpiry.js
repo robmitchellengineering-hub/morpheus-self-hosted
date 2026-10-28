@@ -72,7 +72,23 @@ export function expiredPurchasedCredits({
   months = null,
   now = new Date(),
 } = {}) {
-  const signup = round4(Math.max(0, Number(signupCredits || 0)));
+  const signupRaw = Number(signupCredits ?? 0);
+  const consumedRaw = Number(consumedCredits ?? 0);
+  const expiredRaw = Number(expiredCredits ?? 0);
+
+  // An unreadable or negative count is NOT zero. Zero consumption would leave
+  // more of a paid lot looking unused and expire MORE of it, which is the one
+  // direction this rule must never fail. Refuse to expire at all instead — the
+  // same fail-closed direction `buildBudgetStore` uses for an unreadable budget.
+  // `remainingSignup` is still returned so the database half never takes a
+  // grant, even if a caller ignores `credits`.
+  if (![signupRaw, consumedRaw, expiredRaw].every(Number.isFinite)
+    || signupRaw < 0 || consumedRaw < 0 || expiredRaw < 0) {
+    const protectedSignup = Number.isFinite(signupRaw) && signupRaw > 0 ? round4(signupRaw) : 0;
+    return { credits: 0, remainingSignup: protectedSignup, lots: [] };
+  }
+
+  const signup = round4(signupRaw);
   const window = Number(months);
   // A window shorter than one whole month is not a window: `addMonths` would
   // truncate it to zero and expire the lot at the instant it was bought. The
@@ -98,8 +114,7 @@ export function expiredPurchasedCredits({
 
   // Purchases are consumed first, oldest-first. Signup credits sit behind them,
   // so anything left after this walk is the unused purchased balance.
-  let consumed = Math.max(0, Number(consumedCredits || 0)) + Math.max(0, Number(expiredCredits || 0));
-  if (!Number.isFinite(consumed)) consumed = 0;
+  let consumed = consumedRaw + expiredRaw;
 
   let expiredTotal = 0;
   const detail = [];

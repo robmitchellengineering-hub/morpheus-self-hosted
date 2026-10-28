@@ -75,12 +75,16 @@ try {
     from credit_transactions
   `)).rows[0];
 
+  // The provider bill is OUR bill. A `provider = 'custom'` call ran on the
+  // customer's own key, so its `cost_usd` is what that customer paid their
+  // provider — including it here would overstate our monthly bill and understate
+  // the float. Consumption still counts every call; only the cost is filtered.
   const usage = (await pool.query(`
     select
       coalesce(sum(credits_charged), 0)::float as consumed_credits_all,
       coalesce(sum(case when created_date >= now() - interval '${WINDOW_DAYS} days' then credits_charged else 0 end), 0)::float as consumed_credits_window,
-      coalesce(sum(cost_usd), 0)::float as provider_cost_all,
-      coalesce(sum(case when created_date >= now() - interval '${WINDOW_DAYS} days' then cost_usd else 0 end), 0)::float as provider_cost_window
+      coalesce(sum(cost_usd) filter (where provider <> 'custom'), 0)::float as provider_cost_all,
+      coalesce(sum(cost_usd) filter (where provider <> 'custom' and created_date >= now() - interval '${WINDOW_DAYS} days'), 0)::float as provider_cost_window
     from usage_events
   `)).rows[0];
 

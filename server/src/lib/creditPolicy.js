@@ -206,7 +206,10 @@ export function buildCeilingCredits(env) {
 export function wouldExceedBalanceCap(balance, credits, cap) {
   if (cap == null) return false;
   const limit = Number(cap);
-  const next = Number(balance ?? 0) + Number(credits ?? 0);
+  // Do NOT coerce a missing part to zero: a balance nobody could read is not a
+  // balance of zero, and treating it as one would let the purchase past the cap.
+  if (balance == null || credits == null) return true;
+  const next = Number(balance) + Number(credits);
   if (!Number.isFinite(limit) || !Number.isFinite(next)) return true;
   return next > limit;
 }
@@ -218,10 +221,13 @@ export function wouldExceedBalanceCap(balance, credits, cap) {
  */
 export function withinBuildCeiling(spentCredits, requestedCredits, ceilingCredits, consentCredits = 0) {
   if (ceilingCredits == null) return true;
+  // A missing spend or request is unreadable, not zero: treating it as zero
+  // would forget what the build has already used and let it overspend.
+  if (spentCredits == null || requestedCredits == null) return false;
   // `?? 0`, not `|| 0`: a NaN must stay NaN and be refused below, rather than
   // becoming an accidental zero that lets an unreadable budget through.
-  const spent = Number(spentCredits ?? 0);
-  const requested = Number(requestedCredits ?? 0);
+  const spent = Number(spentCredits);
+  const requested = Number(requestedCredits);
   const allowed = Number(ceilingCredits) + Number(consentCredits ?? 0);
   if (![spent, requested, allowed].every(Number.isFinite)) return false;
   return spent + requested <= allowed;

@@ -59,7 +59,16 @@ export default async function handler({ user, body, req }) {
         credits: block.credits,
       });
     }
-    const balance = Number(account.credit_balance);
+    const rawBalance = account.credit_balance;
+    const balance = Number(rawBalance);
+    // A null column is not a zero balance. Refuse rather than let an unreadable
+    // account slip past the cap.
+    if (rawBalance == null || !Number.isFinite(balance)) {
+      throw Object.assign(
+        new Error('Your credit balance could not be read, so the purchase was refused rather than allowed past the balance cap.'),
+        { status: 409, code: 'CREDIT_BALANCE_CAP', cap, credits: block.credits },
+      );
+    }
     if (wouldExceedBalanceCap(balance, block.credits, cap)) {
       const next = Math.round((balance + block.credits) * 10000) / 10000;
       throw Object.assign(

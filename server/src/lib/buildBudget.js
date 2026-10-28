@@ -76,7 +76,10 @@ export function buildCeilingAllows(spentCredits, requestedCredits, ceilingCredit
  * it (H19). A negative amount is refused for the same reason.
  */
 export function buildReservationAmount(value) {
-  const n = Number(value ?? 0);
+  // Absent is not zero: a call site that forgot to pass its estimate must be
+  // refused by the store rather than counted as a free step.
+  if (value == null || String(value).trim() === '') return null;
+  const n = Number(value);
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 

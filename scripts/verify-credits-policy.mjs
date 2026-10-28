@@ -142,6 +142,8 @@ check('…a purchase over the cap is refused', wouldExceedBalanceCap(900, 200, 1
 check('…and no cap never refuses', wouldExceedBalanceCap(1_000_000, 1, null), false);
 check('…an unreadable balance fails closed when a cap is set',
   wouldExceedBalanceCap(Number.NaN, 200, 1000), true);
+check('…a missing balance is not treated as zero',
+  wouldExceedBalanceCap(null, 200, 1000), true);
 check('…as does an unreadable cap', wouldExceedBalanceCap(900, 200, Number.NaN), true);
 
 // The placeholders are Rob's decision, and the document has to say so rather
@@ -157,6 +159,23 @@ check('no configured window means no expiry',
   expiredPurchasedCredits({ purchases: [{ credits: 100, created_date: jan }], signupCredits: 200, months: null, now: sep }).credits, 0);
 check('a signup grant with no purchase never expires',
   expiredPurchasedCredits({ purchases: [], signupCredits: 200, months: 1, now: sep }).credits, 0);
+// An unreadable count must NOT be read as zero consumption: that would expire
+// more of a paid lot, which is the one direction expiry can harm a customer.
+for (const [label, input] of [
+  ['an unreadable consumed count', { consumedCredits: Number.NaN }],
+  ['an unreadable expired count', { expiredCredits: Number.NaN }],
+  ['a negative consumed count', { consumedCredits: -1 }],
+  ['an unreadable signup grant', { signupCredits: Number.NaN }],
+]) {
+  check(`${label} expires nothing`,
+    expiredPurchasedCredits({
+      purchases: [{ credits: 100, created_date: jan }],
+      signupCredits: 200,
+      months: 6,
+      now: jul,
+      ...input,
+    }).credits, 0);
+}
 check('an unused purchased lot expires at its window',
   expiredPurchasedCredits({ purchases: [{ credits: 100, created_date: jan }], signupCredits: 200, months: 6, now: jul }).credits, 100);
 check('…and the signup grant is still protected',
@@ -205,8 +224,10 @@ check('…and refuses a purchase that would exceed it',
   /wouldExceedBalanceCap\(balance, block\.credits, cap\)/.test(checkout), true);
 check('…with a stable machine-readable code',
   /CREDIT_BALANCE_CAP/.test(checkout), true);
-check('…and refuses when the balance itself cannot be read',
+check('…and refuses when the account cannot be read',
   /if \(!account\)/.test(checkout), true);
+check('…and refuses a null/non-finite balance instead of treating it as zero',
+  /rawBalance == null \|\| !Number\.isFinite\(balance\)/.test(checkout), true);
 check('…before the Stripe session is created',
   checkout.indexOf('wouldExceedBalanceCap') < checkout.indexOf("stripeFetch('/checkout/sessions'"), true);
 check('the refusal is a 4xx, not a silent clamp',
@@ -275,7 +296,7 @@ const walk = (dir) => {
   for (const entry of readdirSync(join(ROOT, dir), { withFileTypes: true })) {
     const rel = `${dir}/${entry.name}`;
     if (entry.isDirectory()) walk(rel);
-    else if (['.js', '.jsx', '.json'].includes(extname(entry.name))) COPY_FILES.push(rel);
+    else if (['.js', '.jsx', '.json', '.html', '.txt'].includes(extname(entry.name))) COPY_FILES.push(rel);
   }
 };
 walk('src');
@@ -370,6 +391,8 @@ check('the report reads paid sales', /status\s*=\s*'paid'/.test(report), true);
 check('…consumed usage', /credits_charged/.test(report), true);
 check('…account balances', /credit_balance/.test(report), true);
 check('…provider cost', /cost_usd/.test(report), true);
+check('…excluding a customer\'s own-key spend from OUR provider bill',
+  /provider\s*<>\s*'custom'/.test(report), true);
 check('…through the tested arithmetic', /deferredRevenueSummary/.test(report) && /purchasedOutstanding/.test(report), true);
 check('…for a monthly window', /WINDOW_DAYS\s*=\s*30/.test(report), true);
 check('…from production, never a local DATABASE_URL',

@@ -136,7 +136,9 @@ An unattended build cannot exceed **N credits** without explicit consent.
 - credits **expired**;
 - **outstanding liability** — current balances in credits and dollars at the face rate;
 - **float as a share of the monthly provider bill** — outstanding liability dollars divided
-  by the trailing-30-day `UsageEvent.cost_usd`.
+  by the trailing-30-day `UsageEvent.cost_usd` for calls Morpheus paid for. Calls on a
+  customer's own provider key are excluded from the bill: that cost belongs to them, not
+  to Morpheus, and counting it would understate the float.
 
 The report is read-only. Exit 2 means the production credential is missing — not verified,
 never a pass.
