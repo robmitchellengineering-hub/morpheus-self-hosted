@@ -11,23 +11,34 @@
 // minted here verifies in any shipped SDK build.
 import crypto from 'node:crypto';
 
-export const LICENCE_DAYS = 7;
+// MONTHLY, BECAUSE THAT IS WHAT IS PAID FOR (Rob, 2026-10-30). A subscription bills monthly, so the licence it mints lasts
+// the billing period; a customer is never asked to renew something they have already paid for.
+export const LICENCE_DAYS = 30;
+/** The grace a failed payment buys: long enough for a card change, short enough to matter. */
+export const GRACE_DAYS = 7;
 
 const b64url = (b) => Buffer.from(b).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
-/** Events that keep a licence alive, and events that must NOT mint one. Named explicitly, never defaulted. */
+/** Events that keep a licence alive, which grant GRACE, and which must NOT mint one. Named explicitly, never defaulted. */
 export const RENEWING = new Set(['invoice.paid', 'invoice.payment_succeeded', 'customer.subscription.updated', 'customer.subscription.created']);
-export const STOPPING = new Set(['invoice.payment_failed', 'customer.subscription.deleted', 'customer.subscription.paused', 'charge.refunded']);
+/**
+ * A FAILED PAYMENT IS NOT AN INSTANT CUT-OFF (Rob, 2026-10-30): "if someones payment fails they dont instantly loose service
+ * they have 7 days to pay before it shuts down". The failed payment mints a deliberate, bounded grace licence — a declined
+ * card is not an outage — and when that expires, nothing more is minted.
+ */
+export const GRACE_TRIGGER = 'invoice.payment_failed';
+export const STOPPING = new Set(['customer.subscription.deleted', 'customer.subscription.paused', 'charge.refunded']);
 
 export function decide(event) {
   const type = event?.type;
   if (RENEWING.has(type)) return { renew: true, why: type };
+  if (type === GRACE_TRIGGER) return { renew: true, grace: true, days: GRACE_DAYS, why: `${type} — the payment failed, so a ${GRACE_DAYS}-day grace licence is minted` };
   if (STOPPING.has(type)) return { renew: false, stop: true, why: `${type} — not paid; no licence is minted and the last one is left to expire` };
   return { renew: false, why: `${type ?? '(no type)'} is not a billing event this service acts on` };
 }
 
 /** Seats come from what was bought (the Stripe quantity), so a licence matches the subscription rather than guessing. */
-export function claimsFor(event, { days = LICENCE_DAYS, now = Date.now() } = {}) {
+export function claimsFor(event, { days = LICENCE_DAYS, grace = false, now = Date.now() } = {}) {
   const o = event?.data?.object ?? {};
   const account = o.customer ?? o.customer_email ?? o.subscription ?? null;
   if (!account) return { ok: false, why: 'the event names no customer, so a licence cannot be tied to an account' };
@@ -44,6 +55,8 @@ export function claimsFor(event, { days = LICENCE_DAYS, now = Date.now() } = {})
       iat: t,
       exp: t + Math.round(days * 86_400),
       src: 'stripe',
+      // A grace licence is labelled, so support can tell "we granted you a week" from "you paid".
+      ...(grace ? { grace: true } : {}),
       event: event.id ?? null,
     },
   };
@@ -104,7 +117,9 @@ export function licenceForEvent(event, { keyPem, days = LICENCE_DAYS, to = null,
   const d = decide(event);
   if (!d.renew) return { minted: false, stopped: !!d.stop, why: d.why };
   if (!keyPem) return { minted: false, why: 'VALIANT_ISSUER_KEY is not configured, so no licence can be signed' };
-  const c = claimsFor(event, { days, now });
+  // A GRACE MINT USES ITS OWN TERM. Reusing the paid term here would give a failed payment another full month.
+  const term = d.grace ? d.days : days;
+  const c = claimsFor(event, { days: term, grace: !!d.grace, now });
   if (!c.ok) return { minted: false, why: c.why };
   const licence = mintLicence(c.claims, keyPem);
   const mail = renewalMail({ event, licence, claims: c.claims, to });

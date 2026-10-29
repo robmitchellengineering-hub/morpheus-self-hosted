@@ -25,7 +25,13 @@ const deleted = () => ({ id: 'evt_3', type: 'customer.subscription.deleted', dat
 
 // ── the decisions
 check('invoice.paid renews', decide(paid()).renew === true);
-check('payment_failed does not renew, and says it stopped', (() => { const d = decide(unpaid()); return !d.renew && d.stop; })());
+// A FAILED PAYMENT GRANTS GRACE (Rob, 2026-10-30). The old expectation cut a paying customer off for a declined card.
+check('payment_failed grants a 7-day grace licence rather than stopping', (() => {
+  const d = decide(unpaid());
+  if (!(d.renew === true && d.grace === true && d.days === 7)) return false;
+  const g = claimsFor(unpaid(), { days: d.days, grace: true });
+  return g.ok && g.claims.grace === true && Math.round((g.claims.exp - g.claims.iat) / 86400) === 7;
+})());
 check('subscription.deleted does not renew', decide(deleted()).renew === false);
 check('an unrelated event does not renew', decide({ type: 'customer.created' }).renew === false);
 
@@ -75,7 +81,12 @@ check('the licence is a vvs1 token', /^vvs1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.te
   const r = licenceForEvent(paid(6), { keyPem });
   check('a paid event mints AND mails', r.minted && r.mail?.ok);
   const s = licenceForEvent(unpaid(), { keyPem });
-  check('an unpaid event mints NOTHING', s.minted === false && s.stopped === true);
+  // A DECLINED CARD IS NOT AN OUTAGE: the failed payment mints a labelled 7-day grace licence.
+  check('an unpaid event mints a 7-day GRACE licence', s.minted === true && s.claims?.grace === true &&
+    Math.round((s.claims.exp - s.claims.iat) / 86400) === 7);
+  // …and a cancelled subscription still mints nothing at all.
+  const cancelled = licenceForEvent({ id: 'evt_9', type: 'customer.subscription.deleted', data: { object: { customer: 'cus_acme' } } }, { keyPem });
+  check('a cancelled subscription mints NOTHING', cancelled.minted === false && cancelled.stopped === true);
   const k = licenceForEvent(paid(6), {});
   check('no issuer key → no licence, and it says why', k.minted === false && /VALIANT_ISSUER_KEY/.test(k.why));
 }
@@ -84,4 +95,4 @@ let wrong = 0;
 for (const [name, ok] of cases) { if (!ok) wrong++; console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${name}`); }
 console.log(`\n${cases.length - wrong}/${cases.length} case(s) behaved as a paid subscription must.`);
 if (wrong) process.exit(1);
-console.log('paid → minted and mailed; not paid → nothing minted; the SDK accepts what morpheus signs.\n');
+console.log('paid → a monthly licence; a failed payment → 7 days of grace; cancelled → nothing; the SDK accepts what morpheus signs.\n');
