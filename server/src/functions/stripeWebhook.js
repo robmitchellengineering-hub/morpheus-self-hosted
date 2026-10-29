@@ -50,9 +50,32 @@ function verifyStripeSignature(rawBody, signature, secret) {
  * Mint the licence for a verified event and mail it to the customer. Never throws: a mail failure must not make Stripe
  * retry a webhook that has already recorded the subscription, and a missing key must be loud in the log, not silent.
  */
+/**
+ * The ids this issuer has revoked, newest first, capped so a licence stays small. `revoked_at` is the only place a
+ * revocation is recorded, so this is the single source for every carrier.
+ */
+async function revokedJtis(limit = 200) {
+  const rows = await prisma.licence.findMany({
+    where: { revoked_at: { not: null } },
+    select: { jti: true },
+    orderBy: { revoked_at: 'desc' },
+    take: limit,
+  });
+  return rows.map((r) => r.jti).filter(Boolean);
+}
+
 async function issueLicence(event, { reason, to = null } = {}) {
   const keyPem = process.env.VALIANT_ISSUER_KEY || null;
-  const r = licenceForEvent(event, { keyPem, to });
+  // THE RENEWAL IS ALSO THE REVOCATION UPDATE (Rob, 2026-10-30). Every licence this service mints carries the list of
+  // revoked ids, so a customer's machine learns it at renewal with no endpoint to run and no phone-home from the SDK. A
+  // lookup that fails must not stop the licence: the customer gets one without the list rather than nothing at all.
+  let revocations = [];
+  try {
+    revocations = await revokedJtis(event);
+  } catch (e) {
+    console.error(`valiant revocation list unavailable (${reason}): ${e.message} — minting without it`);
+  }
+  const r = licenceForEvent(event, { keyPem, to, revocations });
   if (!r.minted) {
     console.error(`valiant licence not minted (${reason}, ${event.type}): ${r.why}`);
     return r;

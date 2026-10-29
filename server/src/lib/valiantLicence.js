@@ -38,7 +38,7 @@ export function decide(event) {
 }
 
 /** Seats come from what was bought (the Stripe quantity), so a licence matches the subscription rather than guessing. */
-export function claimsFor(event, { days = LICENCE_DAYS, grace = false, now = Date.now() } = {}) {
+export function claimsFor(event, { days = LICENCE_DAYS, grace = false, revocations = [], now = Date.now() } = {}) {
   const o = event?.data?.object ?? {};
   const account = o.customer ?? o.customer_email ?? o.subscription ?? null;
   if (!account) return { ok: false, why: 'the event names no customer, so a licence cannot be tied to an account' };
@@ -57,6 +57,7 @@ export function claimsFor(event, { days = LICENCE_DAYS, grace = false, now = Dat
       src: 'stripe',
       // A grace licence is labelled, so support can tell "we granted you a week" from "you paid".
       ...(grace ? { grace: true } : {}),
+      ...(Array.isArray(revocations) && revocations.length ? { revocations } : {}),
       event: event.id ?? null,
     },
   };
@@ -113,13 +114,15 @@ export function renewalMail({ event, licence, claims, to = null }) {
  * The whole decision for one verified Stripe event: mint + mail on a paid event, nothing on a stopping one.
  * `keyPem` absent means the issuer key is not configured — the caller is told, and NO half-licence is invented.
  */
-export function licenceForEvent(event, { keyPem, days = LICENCE_DAYS, to = null, now = Date.now() } = {}) {
+export function licenceForEvent(event, { keyPem, days = LICENCE_DAYS, to = null, revocations = [], now = Date.now() } = {}) {
   const d = decide(event);
   if (!d.renew) return { minted: false, stopped: !!d.stop, why: d.why };
   if (!keyPem) return { minted: false, why: 'VALIANT_ISSUER_KEY is not configured, so no licence can be signed' };
   // A GRACE MINT USES ITS OWN TERM. Reusing the paid term here would give a failed payment another full month.
   const term = d.grace ? d.days : days;
-  const c = claimsFor(event, { days: term, grace: !!d.grace, now });
+  // THE RENEWAL IS ALSO THE REVOCATION UPDATE: the list rides on the licence so it reaches machines that will never call
+  // an endpoint. Bounded by the caller — a licence that is all list is a licence nobody can paste.
+  const c = claimsFor(event, { days: term, grace: !!d.grace, revocations, now });
   if (!c.ok) return { minted: false, why: c.why };
   const licence = mintLicence(c.claims, keyPem);
   const mail = renewalMail({ event, licence, claims: c.claims, to });
