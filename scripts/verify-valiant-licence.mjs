@@ -93,6 +93,16 @@ check('the licence is a vvs1 token', /^vvs1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.te
 
 let wrong = 0;
 for (const [name, ok] of cases) { if (!ok) wrong++; console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${name}`); }
+// ── the renewal is also the revocation update (Rob, 2026-10-30)
+{
+  const r = licenceForEvent(paid(1), { keyPem, revocations: ['lic_bad1', 'lic_bad2'] });
+  check('a minted licence CARRIES the revocation list', r.minted === true && JSON.stringify(r.claims.revocations) === JSON.stringify(['lic_bad1', 'lic_bad2']));
+  const p2 = licenceForEvent(paid(1), { keyPem });
+  check('…and carries nothing when the list is empty, so a licence is not padded', p2.minted === true && p2.claims.revocations === undefined);
+  const g = licenceForEvent(unpaid(), { keyPem, revocations: ['lic_x'] });
+  check('a GRACE licence carries it too, because it is a renewal in every other respect', g.minted === true && g.claims.grace === true && JSON.stringify(g.claims.revocations) === JSON.stringify(['lic_x']));
+}
+
 console.log(`\n${cases.length - wrong}/${cases.length} case(s) behaved as a paid subscription must.`);
 if (wrong) process.exit(1);
 console.log('paid → a monthly licence; a failed payment → 7 days of grace; cancelled → nothing; the SDK accepts what morpheus signs.\n');
