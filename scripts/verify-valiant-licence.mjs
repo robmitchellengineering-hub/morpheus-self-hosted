@@ -103,6 +103,22 @@ for (const [name, ok] of cases) { if (!ok) wrong++; console.log(`  ${ok ? 'PASS'
   check('a GRACE licence carries it too, because it is a renewal in every other respect', g.minted === true && g.claims.grace === true && JSON.stringify(g.claims.revocations) === JSON.stringify(['lic_x']));
 }
 
+// ── ONE SECRET, TWO NAMES: a deployment that sets either one must be able to sign (Rob, 2026-11-02)
+{
+  const savedA = process.env.VVS_ISSUER_KEY_PEM;
+  const savedB = process.env.VALIANT_ISSUER_KEY;
+  delete process.env.VVS_ISSUER_KEY_PEM;
+  delete process.env.VALIANT_ISSUER_KEY;
+  const { issuerKeyPem } = await import('../server/src/lib/licenceKey.js');
+  check('with neither name set there is no key, and it invents none', issuerKeyPem() === null);
+  process.env.VALIANT_ISSUER_KEY = 'pem-under-the-old-name';
+  check('the old name is accepted', issuerKeyPem() === 'pem-under-the-old-name');
+  process.env.VVS_ISSUER_KEY_PEM = 'pem-under-the-documented-name';
+  check('the documented name wins when both are set', issuerKeyPem() === 'pem-under-the-documented-name');
+  if (savedA === undefined) delete process.env.VVS_ISSUER_KEY_PEM; else process.env.VVS_ISSUER_KEY_PEM = savedA;
+  if (savedB === undefined) delete process.env.VALIANT_ISSUER_KEY; else process.env.VALIANT_ISSUER_KEY = savedB;
+}
+
 console.log(`\n${cases.length - wrong}/${cases.length} case(s) behaved as a paid subscription must.`);
 if (wrong) process.exit(1);
 console.log('paid → a monthly licence; a failed payment → 7 days of grace; cancelled → nothing; the SDK accepts what morpheus signs.\n');
