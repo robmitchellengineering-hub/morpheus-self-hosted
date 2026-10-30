@@ -10,7 +10,7 @@
 // never be: whoever holds it can mint licences, and the matching public half is baked into the SDK.
 // Absent key = refusal, never a fallback to a throwaway key, because a licence signed by a key the
 // shipped build does not carry looks issued and verifies nowhere.
-import { createPrivateKey, sign, randomBytes } from "node:crypto";
+import { createPrivateKey, createPublicKey, createHash, sign, randomBytes } from "node:crypto";
 
 export const PLANS = { solo: 1, team: 5 };
 
