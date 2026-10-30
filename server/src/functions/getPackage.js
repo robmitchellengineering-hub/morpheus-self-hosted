@@ -10,14 +10,19 @@ export default async function getPackage({ body, query, res }) {
   // supported for callers that already send JSON. A fetch-only-POST endpoint is unusable as a package URL — which is what the first
   // `npm install` from this registry proved, with TAR_BAD_ARCHIVE over a JSON error page.
   const name = String(query?.name ?? body?.name ?? '').trim();
-  const version = String(query?.version ?? body?.version ?? '').trim();
-  if (!NAME.test(name) || !VERSION.test(version)) {
-    return { ok: false, error: 'name and version are required and must be valid' };
-  }
-  const rows = await prisma.$queryRaw`
-    select name, version, bytes, sha256 from packages where name = ${name} and version = ${version} limit 1`;
+  const version = String(query?.version ?? body?.version ?? 'latest').trim();
+  if (!NAME.test(name)) return { ok: false, error: 'name is required and must be valid' };
+  // "latest" IS THE COMMAND A STRANGER ACTUALLY TYPES. It resolves to the newest published version — a self-service path that
+  // requires knowing the current version number is not self-service, it is a changelog they have to read first.
+  if (version !== 'latest' && !VERSION.test(version)) return { ok: false, error: 'version must be semver or "latest"' };
+
+  const rows = version === 'latest'
+    ? await prisma.$queryRaw`
+        select name, version, bytes, sha256 from packages where name = ${name} order by published_at desc limit 1`
+    : await prisma.$queryRaw`
+        select name, version, bytes, sha256 from packages where name = ${name} and version = ${version} limit 1`;
   const row = rows?.[0];
-  if (!row) return { ok: false, error: `${name}@${version} is not published here` };
+  if (!row) return { ok: false, error: `${name}${version === 'latest' ? '' : '@' + version} is not published here` };
 
   res.setHeader('content-type', 'application/octet-stream');
   res.setHeader('content-disposition', `attachment; filename="${row.name}-${row.version}.tgz"`);
