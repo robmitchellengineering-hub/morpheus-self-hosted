@@ -64,7 +64,8 @@ const body = (o = {}) => ({ name: 'valiant-verification-sdk', version: '0.3.0', 
 // ── the handlers' decisions, by reading them
 {
   const publish = readFileSync(join(HERE, '..', 'server', 'src', 'functions', 'publishPackage.js'), 'utf8');
-  check('publishing requires a signed-in account', /if \(!user\)/.test(publish));
+  // Admin session OR the release token — a build pushes a release, not a person clicking.
+  check('publishing needs an admin session or the release token', /mayPublish\(\{ user, req \}\)/.test(publish));
   check('…and refuses an existing version rather than overwriting it', /already exists/.test(publish) && /every pin a lie/.test(publish));
   const get = readFileSync(join(HERE, '..', 'server', 'src', 'functions', 'getPackage.js'), 'utf8');
   check('fetching returns the bytes with the checksum in a header', /x-checksum-sha256/.test(get) && /octet-stream/.test(get));
