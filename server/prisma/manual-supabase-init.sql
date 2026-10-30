@@ -1333,3 +1333,18 @@ create unique index if not exists corpus_observations_dedupe
   on corpus_observations (coalesce(install_id, ''), recipe, verdict, observed_at);
 create index if not exists corpus_observations_recipe_verdict on corpus_observations (recipe, verdict);
 create index if not exists corpus_observations_received_at on corpus_observations (received_at);
+
+-- OUR OWN PACKAGE REGISTRY. Bytes live in the row so a redeploy cannot lose a published version.
+create table packages (
+  id           uuid primary key default gen_random_uuid(),
+  name         text not null,
+  version      text not null,
+  sha256       text not null,
+  size         integer not null,
+  notes        text,
+  published_by text,
+  bytes        bytea not null,
+  published_at timestamptz not null default now()
+);
+create unique index if not exists packages_name_version on packages (name, version);
+create index if not exists packages_name_published on packages (name, published_at desc);
