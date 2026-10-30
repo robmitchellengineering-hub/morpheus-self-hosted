@@ -68,6 +68,7 @@ const body = (o = {}) => ({ name: 'valiant-verification-sdk', version: '0.3.0', 
   check('publishing needs an admin session or the release token', /mayPublish\(\{ user, req \}\)/.test(publish));
   check('…and refuses an existing version rather than overwriting it', /already exists/.test(publish) && /every pin a lie/.test(publish));
   const get = readFileSync(join(HERE, '..', 'server', 'src', 'functions', 'getPackage.js'), 'utf8');
+  check('fetching answers a GET query, because `npm install <url>` cannot send a body', /query\?\.name/.test(get) && /query\?\.version/.test(get));
   check('fetching returns the bytes with the checksum in a header', /x-checksum-sha256/.test(get) && /octet-stream/.test(get));
   check('…and does not send JSON over the response it wrote', /return undefined/.test(get));
   const list = readFileSync(join(HERE, '..', 'server', 'src', 'functions', 'listPackages.js'), 'utf8');
