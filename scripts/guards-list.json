@@ -103,6 +103,7 @@
     "verify-prose-ink.mjs",
     "verify-provider-spend.mjs",
     "verify-proving-ground.mjs",
+    "verify-publish-auth.mjs",
     "verify-push-policy.mjs",
     "verify-redirects.mjs",
     "verify-registry-parity.mjs",

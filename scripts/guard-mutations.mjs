@@ -4555,14 +4555,14 @@ export const MUTATIONS = [
     guard: 'verify-guard-count-copy.mjs',
     file: 'src/lib/morpheusCapabilities.json',
     why: 'Raises the published guard count above the real one, so the drift this guard exists to catch would read as accurate copy.',
-    find: '137 automated guards',
+    find: '138 automated guards',
     replace: '999 automated guards',
   },
   {
     guard: 'verify-guard-count-copy.mjs',
     file: 'src/pages/Projects.jsx',
     why: 'Raises the published mutation-test count above the real one, so the second drift this guard pins would pass un-noticed.',
-    find: '510 recorded mutation tests',
+    find: '511 recorded mutation tests',
     replace: '999 recorded mutation tests',
   },
   {
@@ -4601,6 +4601,16 @@ export const MUTATIONS = [
     why: 'Deletes the duplicate-version refusal, so a pinned version can silently change underneath a customer.',
     find: 'return { ok: false, error: `${name}@${version} already exists — publishing a new build over a version would make every pin a lie. Bump the version.` };',
     replace: 'return { ok: true, name, version };',
+  },
+
+  {
+    guard: 'verify-publish-auth.mjs',
+    file: 'server/src/lib/publishAuth.js',
+    // AN UNSET TOKEN MUST GRANT NOTHING. Treating "not configured" as "no auth needed" is how a public endpoint becomes an upload
+    // endpoint for anyone who finds it.
+    why: 'Treats an unset release token as permission, so anyone can publish a package.',
+    find: "  if (!configured) return false;",
+    replace: "  if (!configured) return true;",
   },
 
 ];

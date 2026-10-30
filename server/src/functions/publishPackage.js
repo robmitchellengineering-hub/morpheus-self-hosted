@@ -4,9 +4,11 @@
 // forever — so it takes an account with admin rights, and a version that already exists is refused rather than overwritten.
 import { prisma } from '../db.js';
 import { normalizePublish } from '../lib/packageShape.js';
+import { mayPublish } from '../lib/publishAuth.js';
 
-export default async function publishPackage({ user, body }) {
-  if (!user) return { ok: false, error: 'sign in to publish' };
+export default async function publishPackage({ user, body, req }) {
+  // Admin session OR the release token: a build pushes a release, not a person clicking.
+  if (!mayPublish({ user, req })) return { ok: false, error: 'publishing needs an admin session or the release token' };
   const shape = normalizePublish(body);
   if (!shape.ok) return { ok: false, error: shape.why };
   const { name, version, bytes, sha256, size, notes } = shape.pkg;
@@ -21,6 +23,6 @@ export default async function publishPackage({ user, body }) {
 
   await prisma.$executeRaw`
     insert into packages (name, version, sha256, size, notes, published_by, bytes)
-    values (${name}, ${version}, ${sha256}, ${size}, ${notes}, ${user.id}, ${bytes})`;
+    values (${name}, ${version}, ${sha256}, ${size}, ${notes}, ${user?.id ?? 'release-token'}, ${bytes})`;
   return { ok: true, name, version, sha256, size };
 }
