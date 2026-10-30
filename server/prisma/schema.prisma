@@ -1702,3 +1702,24 @@ model VerificationSubscription {
 
   @@map("verification_subscriptions")
 }
+
+// What the SDK's corpus collects (Rob, 2026-11-02): a salted recipe hash, the verdict, the trial count, the shape of the check
+// and a repo fingerprint — NEVER the file, the find, the replace or the check itself, because a recipe is source code. The
+// unique key makes a retried batch idempotent: the SDK keeps its queue when a send fails, so the same observation arrives again.
+model CorpusObservation {
+  id           String   @id @default(uuid())
+  install_id   String?
+  recipe       String
+  verdict      String
+  trials       Int?
+  check_kind   String?
+  repo         String?
+  license      String?
+  observed_at  DateTime
+  received_at  DateTime @default(now())
+
+  @@unique([install_id, recipe, verdict, observed_at])
+  @@index([recipe, verdict])
+  @@index([received_at])
+  @@map("corpus_observations")
+}

@@ -3960,8 +3960,8 @@ export const MUTATIONS = [
     // guard's own header says the property is "no code path here fetches an address the caller chose", and a
     // behavioural test cannot see this, because both legitimate callers pass an owned projectId.
     why: 'Puts checkDeployHealth back in PUBLIC_FUNCTIONS, so an unauthenticated caller can make the server fetch an address they choose.',
-    find: "const PUBLIC_FUNCTIONS = new Set(['browseTemplates', 'getPublicTemplate', 'downloadFreeTemplate', 'stripeWebhook', 'createDonationCheckout', 'createCertificationCheckout', 'createBillingPortal', 'submitFeedback']);",
-    replace: "const PUBLIC_FUNCTIONS = new Set(['browseTemplates', 'getPublicTemplate', 'downloadFreeTemplate', 'stripeWebhook', 'createDonationCheckout', 'createCertificationCheckout', 'createBillingPortal', 'submitFeedback', 'checkDeployHealth']);",
+    find: "const PUBLIC_FUNCTIONS = new Set(['browseTemplates', 'getPublicTemplate', 'downloadFreeTemplate', 'stripeWebhook', 'createDonationCheckout', 'createCertificationCheckout', 'createBillingPortal', 'submitFeedback', 'corpusIngest']);",
+    replace: "const PUBLIC_FUNCTIONS = new Set(['browseTemplates', 'getPublicTemplate', 'downloadFreeTemplate', 'stripeWebhook', 'createDonationCheckout', 'createCertificationCheckout', 'createBillingPortal', 'submitFeedback', 'corpusIngest', 'checkDeployHealth']);",
   },
   {
     guard: 'verify-deploy-health-scope.mjs',
@@ -4555,14 +4555,14 @@ export const MUTATIONS = [
     guard: 'verify-guard-count-copy.mjs',
     file: 'src/lib/morpheusCapabilities.json',
     why: 'Raises the published guard count above the real one, so the drift this guard exists to catch would read as accurate copy.',
-    find: '134 automated guards',
+    find: '135 automated guards',
     replace: '999 automated guards',
   },
   {
     guard: 'verify-guard-count-copy.mjs',
     file: 'src/pages/Projects.jsx',
     why: 'Raises the published mutation-test count above the real one, so the second drift this guard pins would pass un-noticed.',
-    find: '507 recorded mutation tests',
+    find: '508 recorded mutation tests',
     replace: '999 recorded mutation tests',
   },
   {
@@ -4572,6 +4572,17 @@ export const MUTATIONS = [
     find: 'exp: iat + Math.round(n * 86400),',
     replace: 'exp: iat + Math.round(n * 60),',
   },
+  {
+    guard: 'verify-corpus-ingest.mjs',
+    file: 'server/src/lib/corpusShape.js',
+    // THE COLLECTOR IS PUBLIC, so validation IS the security. Accepting any verdict string turns a bounded, typed payload into
+    // free-form storage that anyone on the internet can write to — the guard's own case ("an unknown verdict is rejected") is
+    // what notices.
+    why: 'Accepts an unknown verdict, so the public collector stores free-form strings instead of the documented shape.',
+    find: "    if (!VERDICTS.has(String(o.verdict ?? ''))) { rejected++; continue; }",
+    replace: "    if (false && !VERDICTS.has(String(o.verdict ?? ''))) { rejected++; continue; }",
+  },
+
 ];
 
 // ── UNPROVEN GUARDS, COMING DOWN ────────────────────────────────────────────
