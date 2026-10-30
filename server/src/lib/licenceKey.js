@@ -37,10 +37,19 @@ export function buildClaims({ accountId, plan, seats, days, kid = "vvs-2026-10",
 const b64url = (buf) => Buffer.from(buf).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
 /** Sign claims into a licence token. Throws when the key is absent or unusable. */
-export function signLicence(claims, privateKeyPem = process.env.VVS_ISSUER_KEY_PEM) {
+// TWO NAMES HAVE BEEN USED FOR THE SAME SECRET, and that is how a deployment ends up with "no issuer key" while somebody is certain
+// they set it. `VVS_ISSUER_KEY_PEM` is the documented name; `VALIANT_ISSUER_KEY` is what the Stripe webhook reads. Both are accepted
+// here so that setting either one is enough — a licence must not fail to sign because of a spelling.
+export const ISSUER_KEY_ENV = 'VVS_ISSUER_KEY_PEM';
+
+export function issuerKeyPem() {
+  return process.env.VVS_ISSUER_KEY_PEM || process.env.VALIANT_ISSUER_KEY || null;
+}
+
+export function signLicence(claims, privateKeyPem = issuerKeyPem()) {
   if (!privateKeyPem) {
     throw Object.assign(
-      new Error("No licence signing key on this deployment — set VVS_ISSUER_KEY_PEM. A licence signed by a throwaway key would verify nowhere."),
+      new Error("No licence signing key on this deployment — set VVS_ISSUER_KEY_PEM (or VALIANT_ISSUER_KEY). A licence signed by a throwaway key would verify nowhere."),
       { status: 503 },
     );
   }

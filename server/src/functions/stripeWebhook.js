@@ -16,6 +16,7 @@ import crypto from 'node:crypto';
 import { prisma } from '../db.js';
 import { computeSplit } from '../lib/stripe.js';
 import { licenceForEvent } from '../lib/valiantLicence.js';
+import { issuerKeyPem } from '../lib/licenceKey.js';
 import { sendMail } from '../lib/mailer.js';
 
 function verifyStripeSignature(rawBody, signature, secret) {
@@ -65,7 +66,7 @@ async function revokedJtis(limit = 200) {
 }
 
 async function issueLicence(event, { reason, to = null } = {}) {
-  const keyPem = process.env.VALIANT_ISSUER_KEY || null;
+  const keyPem = issuerKeyPem();   // either name — see lib/licenceKey.js
   // THE RENEWAL IS ALSO THE REVOCATION UPDATE (Rob, 2026-10-30). Every licence this service mints carries the list of
   // revoked ids, so a customer's machine learns it at renewal with no endpoint to run and no phone-home from the SDK. A
   // lookup that fails must not stop the licence: the customer gets one without the list rather than nothing at all.
