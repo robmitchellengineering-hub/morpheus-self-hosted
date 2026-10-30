@@ -84,6 +84,7 @@
     "verify-no-secret-fixtures.mjs",
     "verify-onramp.mjs",
     "verify-operator-drive.mjs",
+    "verify-package-registry.mjs",
     "verify-pairing.mjs",
     "verify-photo-drive.mjs",
     "verify-php-syntax.mjs",

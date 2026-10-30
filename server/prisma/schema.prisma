@@ -1723,3 +1723,22 @@ model CorpusObservation {
   @@index([received_at])
   @@map("corpus_observations")
 }
+
+// OUR OWN PACKAGE REGISTRY (Rob, 2026-11-02: "if its not there anywhere build it"). A build is bytes in the database, so a
+// redeploy cannot lose a version: `valiant-verification-sdk@0.3.0` must still be fetchable from the file, not from a disk that was
+// replaced. The bytes are gzip tarballs; the unique key makes a version immutable.
+model Package {
+  id           String   @id @default(uuid())
+  name         String
+  version      String
+  sha256       String
+  size         Int
+  notes        String?
+  published_by String?
+  bytes        Bytes
+  published_at DateTime @default(now())
+
+  @@unique([name, version])
+  @@index([name, published_at])
+  @@map("packages")
+}

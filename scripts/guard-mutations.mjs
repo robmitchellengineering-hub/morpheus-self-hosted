@@ -3960,8 +3960,8 @@ export const MUTATIONS = [
     // guard's own header says the property is "no code path here fetches an address the caller chose", and a
     // behavioural test cannot see this, because both legitimate callers pass an owned projectId.
     why: 'Puts checkDeployHealth back in PUBLIC_FUNCTIONS, so an unauthenticated caller can make the server fetch an address they choose.',
-    find: "const PUBLIC_FUNCTIONS = new Set(['browseTemplates', 'getPublicTemplate', 'downloadFreeTemplate', 'stripeWebhook', 'createDonationCheckout', 'createCertificationCheckout', 'createBillingPortal', 'submitFeedback', 'corpusIngest', 'licenceCheck']);",
-    replace: "const PUBLIC_FUNCTIONS = new Set(['browseTemplates', 'getPublicTemplate', 'downloadFreeTemplate', 'stripeWebhook', 'createDonationCheckout', 'createCertificationCheckout', 'createBillingPortal', 'submitFeedback', 'corpusIngest', 'licenceCheck', 'checkDeployHealth']);",
+    find: "const PUBLIC_FUNCTIONS = new Set(['browseTemplates', 'getPublicTemplate', 'downloadFreeTemplate', 'stripeWebhook', 'createDonationCheckout', 'createCertificationCheckout', 'createBillingPortal', 'submitFeedback', 'corpusIngest', 'licenceCheck', 'listPackages', 'getPackage']);",
+    replace: "const PUBLIC_FUNCTIONS = new Set(['browseTemplates', 'getPublicTemplate', 'downloadFreeTemplate', 'stripeWebhook', 'createDonationCheckout', 'createCertificationCheckout', 'createBillingPortal', 'submitFeedback', 'corpusIngest', 'licenceCheck', 'listPackages', 'getPackage', 'checkDeployHealth']);",
   },
   {
     guard: 'verify-deploy-health-scope.mjs',
@@ -4555,14 +4555,14 @@ export const MUTATIONS = [
     guard: 'verify-guard-count-copy.mjs',
     file: 'src/lib/morpheusCapabilities.json',
     why: 'Raises the published guard count above the real one, so the drift this guard exists to catch would read as accurate copy.',
-    find: '136 automated guards',
+    find: '137 automated guards',
     replace: '999 automated guards',
   },
   {
     guard: 'verify-guard-count-copy.mjs',
     file: 'src/pages/Projects.jsx',
     why: 'Raises the published mutation-test count above the real one, so the second drift this guard pins would pass un-noticed.',
-    find: '509 recorded mutation tests',
+    find: '510 recorded mutation tests',
     replace: '999 recorded mutation tests',
   },
   {
@@ -4591,6 +4591,16 @@ export const MUTATIONS = [
     why: 'Verifies the signature over the base64 text instead of the decoded payload bytes, so every real licence is called forged.',
     find: "  const good = verify(null, payloadBytes, key, Buffer.from(sigPart.replace(/-/g, '+').replace(/_/g, '/'), 'base64'));",
     replace: "  const good = verify(null, Buffer.from(payloadPart), key, Buffer.from(sigPart.replace(/-/g, '+').replace(/_/g, '/'), 'base64'));",
+  },
+
+  {
+    guard: 'verify-package-registry.mjs',
+    file: 'server/src/functions/publishPackage.js',
+    // A REGISTRY THAT OVERWRITES A VERSION IS A REGISTRY NOBODY CAN PIN. The check is deleted outright — not bypassed, because a
+    // bypass leaves the words in the file and the guard asserts on the words. A mutation must break what the guard reads.
+    why: 'Deletes the duplicate-version refusal, so a pinned version can silently change underneath a customer.',
+    find: 'return { ok: false, error: `${name}@${version} already exists — publishing a new build over a version would make every pin a lie. Bump the version.` };',
+    replace: 'return { ok: true, name, version };',
   },
 
 ];
