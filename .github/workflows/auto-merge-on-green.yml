@@ -1,0 +1,36 @@
+# Arm auto-merge on every PR, so a green PR lands itself instead of waiting for someone
+# to remember to press merge. Rob, 2026-10-30: "everything edits and builds on branches
+# or at least it should and then when we get a green it should push to main cause i forget
+# all the time".
+#
+# This only ARMS; it never merges anything that is not green. The merge itself is done by
+# GitHub once every required check on main has passed:
+#   guards (no install) · lint + build · render
+# A red or pending PR simply stays open, which is the whole point.
+#
+# Drafts are skipped: arming a draft would merge work that was not ready to be reviewed.
+name: auto-merge on green
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  arm:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Arm squash auto-merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          # --auto is a no-op (not an error) if it is already armed on a new push.
+          gh pr merge --auto --squash "$PR" \
+            || gh pr merge --auto --squash "$PR" --body "" \
+            || echo "could not arm auto-merge; the PR still needs a manual merge"
