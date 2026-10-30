@@ -109,6 +109,7 @@
     "verify-registry-parity.mjs",
     "verify-render-check.mjs",
     "verify-review-context.mjs",
+    "verify-revocation-service.mjs",
     "verify-rig.mjs",
     "verify-salvage-json.mjs",
     "verify-search-console.mjs",
