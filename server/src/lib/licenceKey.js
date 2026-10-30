@@ -10,7 +10,7 @@
 // never be: whoever holds it can mint licences, and the matching public half is baked into the SDK.
 // Absent key = refusal, never a fallback to a throwaway key, because a licence signed by a key the
 // shipped build does not carry looks issued and verifies nowhere.
-import { createPrivateKey, sign, randomBytes } from "node:crypto";
+import { createPrivateKey, createPublicKey, createHash, sign, randomBytes } from "node:crypto";
 
 export const PLANS = { solo: 1, team: 5 };
 
@@ -78,4 +78,32 @@ export function claimsFromRow(row) {
     kid: row.kid,
     jti: row.jti,
   };
+}
+
+/**
+ * WHAT THE DEPLOYMENT ACTUALLY HAS, without printing it. "No issuer key" and "a key that cannot be parsed" are different faults with
+ * different fixes, and an endpoint that reports the first for both sends somebody to check a variable that is already set (Rob,
+ * 2026-11-02: "that was done we have that api and the key").
+ *
+ * The public-key fingerprint is safe to report: the public half ships in the SDK, so it is not a secret — and it answers the question
+ * that matters, "is production signing with the key our customers verify against?".
+ */
+export function issuerKeyStatus() {
+  const sources = [
+    ['VVS_ISSUER_KEY_PEM', process.env.VVS_ISSUER_KEY_PEM],
+    ['VALIANT_ISSUER_KEY', process.env.VALIANT_ISSUER_KEY],
+  ];
+  const found = sources.find(([, v]) => v && String(v).trim());
+  if (!found) return { configured: false, source: null, parses: false, fingerprint: null };
+  const [source, value] = found;
+  try {
+    const key = createPrivateKey(String(value));
+    const pub = createPublicKey(key).export({ type: 'spki', format: 'pem' });
+    const fingerprint = createHash('sha256').update(String(pub).trim()).digest('hex').slice(0, 16);
+    return { configured: true, source, parses: true, fingerprint };
+  } catch (e) {
+    // Named, not printed: a PEM pasted with literal \n is the commonest form of this fault, and it is worth saying so.
+    const hint = String(value).includes('\\n') ? 'the value contains a literal \\n — paste the PEM with real newlines' : e.message;
+    return { configured: true, source, parses: false, fingerprint: null, why: hint };
+  }
 }
