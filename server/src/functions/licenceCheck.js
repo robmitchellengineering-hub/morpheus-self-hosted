@@ -7,7 +7,7 @@
 // PUBLIC like the other six, because an SDK on a customer's laptop has no account here. That makes it safe to be boring: bounded
 // input, no echo of the token, no detail beyond a reason string.
 import { prisma } from '../db.js';
-import { normalizeCheckBody, peekClaims, checkReply } from '../lib/licenceCheckShape.js';
+import { normalizeCheckBody, checkReply } from '../lib/licenceCheckShape.js';
 import { verifyToken } from '../lib/licenceVerify.js';
 
 export default async function licenceCheck({ body }) {
