@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import { base44 } from '@/api/base44Client';
+import AdminPackagesCard from '@/pages/AdminPackagesCard';
 import MatrixRain from '@/components/matrix/MatrixRain';
 
 // Owner/Admin Control Panel (Feature Backlog #8). New — not a base44 port.
@@ -719,6 +720,8 @@ function TasksTab() {
 function OpsTab() {
   return (
     <div className="space-y-4">
+      {/* Publishing the SDK belongs here: the admin is already signed in, which is the credential publishPackage accepts. */}
+      <AdminPackagesCard />
       <SelfDevManualCard />
       <NorthflankCard />
       <DbConsoleCard />
