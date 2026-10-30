@@ -114,6 +114,7 @@ const HARD = [
   'verify-nam-quantize.mjs',
   'verify-audio-capture.mjs',
   'verify-valiant-licence.mjs',
+  'verify-corpus-ingest.mjs',
   'verify-portable-bundle.mjs',
   'verify-portable-setup.mjs',
   'verify-portable-remote.mjs',

@@ -30,6 +30,7 @@
     "verify-connection-secrets.mjs",
     "verify-context.mjs",
     "verify-contrast.mjs",
+    "verify-corpus-ingest.mjs",
     "verify-cors.mjs",
     "verify-deck-add-guard.mjs",
     "verify-deck-crm-edit.mjs",

@@ -1314,3 +1314,22 @@ ALTER TABLE "licences" ADD CONSTRAINT "licences_created_by_id_fkey"
   FOREIGN KEY ("created_by_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 
+
+-- The SDK's corpus collector (2026-11-02). Metadata only: a salted recipe hash, the verdict, the trial count, the shape of the
+-- check, a repo fingerprint. Never the file, the find, the replace or the check itself.
+create table corpus_observations (
+  id           uuid primary key default gen_random_uuid(),
+  install_id   text,
+  recipe       text not null,
+  verdict      text not null,
+  trials       integer,
+  check_kind   text,
+  repo         text,
+  license      text,
+  observed_at  timestamptz not null,
+  received_at  timestamptz not null default now()
+);
+create unique index if not exists corpus_observations_dedupe
+  on corpus_observations (coalesce(install_id, ''), recipe, verdict, observed_at);
+create index if not exists corpus_observations_recipe_verdict on corpus_observations (recipe, verdict);
+create index if not exists corpus_observations_received_at on corpus_observations (received_at);
