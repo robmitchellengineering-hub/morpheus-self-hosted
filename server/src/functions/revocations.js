@@ -6,7 +6,7 @@
 // FAILS CLOSED: with no signing key the endpoint refuses rather than publishing an unsigned list, because an unsigned list is a wish.
 import { prisma } from '../db.js';
 import { claimsForList } from '../lib/revocationList.js';
-import { signLicence } from '../lib/licenceKey.js';
+import { signLicence, issuerKeyStatus } from '../lib/licenceKey.js';
 
 export default async function revocations() {
   let jtis;
@@ -23,12 +23,20 @@ export default async function revocations() {
   let list;
   try {
     list = signLicence(claims);
-  } catch {
-    return { ok: false, error: 'this deployment has no issuer key, so no signed list can be produced' };
+  } catch (e) {
+    // SAY WHICH FAULT IT IS. "No issuer key" for a key that is present but unparseable sends somebody to check a variable that is
+    // already set — which is exactly what happened (Rob, 2026-11-02: "we have that api and the key").
+    const st = issuerKeyStatus();
+    const why = !st.configured
+      ? 'no issuer key is configured (VVS_ISSUER_KEY_PEM or VALIANT_ISSUER_KEY)'
+      : `${st.source} is set but cannot be used: ${st.why ?? 'the key could not be read'}`;
+    return { ok: false, error: `no signed list can be produced — ${why}`, key: { configured: st.configured, source: st.source, parses: st.parses, fingerprint: st.fingerprint } };
   }
+  const st = issuerKeyStatus();
   return {
     ok: true,
     list,
+    signingKey: { source: st.source, fingerprint: st.fingerprint },
     count: claims.revocations.length,
     issuedAt: new Date(claims.iat * 1000).toISOString(),
     expiresAt: new Date(claims.exp * 1000).toISOString(),

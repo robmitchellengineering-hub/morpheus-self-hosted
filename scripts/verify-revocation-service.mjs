@@ -27,7 +27,9 @@ const check = (n, ok) => { if (!ok) wrong++; console.log(`  ${ok ? 'PASS' : 'FAI
   check('the list is built from licences.revoked_at, the record that already exists', /revoked_at is not null/.test(src));
   check('…and signed with the issuer key rather than shipped raw', /signLicence/.test(src));
   check('…and refuses when the database cannot answer, instead of saying "nothing is revoked"', /could not be read/.test(src));
-  check('…and refuses when there is no key, rather than publishing an unsigned list', /no issuer key/.test(src));
+  check('…and refuses when there is no key, rather than publishing an unsigned list', /no issuer key|no signed list/.test(src));
+  check('…and tells a MISSING key apart from a key that cannot be parsed', /issuerKeyStatus/.test(src) && /cannot be used/.test(src));
+  check('…and reports the fingerprint it signs with, so a deployment can be checked against what customers verify', /signingKey/.test(src));
 }
 
 console.log(`\n${wrong === 0 ? 'the revocation list is signed, bounded, database-derived, and fails closed' : `${wrong} case(s) wrong`}\n`);
