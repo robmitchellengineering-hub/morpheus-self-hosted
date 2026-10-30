@@ -3960,8 +3960,8 @@ export const MUTATIONS = [
     // guard's own header says the property is "no code path here fetches an address the caller chose", and a
     // behavioural test cannot see this, because both legitimate callers pass an owned projectId.
     why: 'Puts checkDeployHealth back in PUBLIC_FUNCTIONS, so an unauthenticated caller can make the server fetch an address they choose.',
-    find: "const PUBLIC_FUNCTIONS = new Set(['browseTemplates', 'getPublicTemplate', 'downloadFreeTemplate', 'stripeWebhook', 'createDonationCheckout', 'createCertificationCheckout', 'createBillingPortal', 'submitFeedback', 'corpusIngest']);",
-    replace: "const PUBLIC_FUNCTIONS = new Set(['browseTemplates', 'getPublicTemplate', 'downloadFreeTemplate', 'stripeWebhook', 'createDonationCheckout', 'createCertificationCheckout', 'createBillingPortal', 'submitFeedback', 'corpusIngest', 'checkDeployHealth']);",
+    find: "const PUBLIC_FUNCTIONS = new Set(['browseTemplates', 'getPublicTemplate', 'downloadFreeTemplate', 'stripeWebhook', 'createDonationCheckout', 'createCertificationCheckout', 'createBillingPortal', 'submitFeedback', 'corpusIngest', 'licenceCheck']);",
+    replace: "const PUBLIC_FUNCTIONS = new Set(['browseTemplates', 'getPublicTemplate', 'downloadFreeTemplate', 'stripeWebhook', 'createDonationCheckout', 'createCertificationCheckout', 'createBillingPortal', 'submitFeedback', 'corpusIngest', 'licenceCheck', 'checkDeployHealth']);",
   },
   {
     guard: 'verify-deploy-health-scope.mjs',
@@ -4555,14 +4555,14 @@ export const MUTATIONS = [
     guard: 'verify-guard-count-copy.mjs',
     file: 'src/lib/morpheusCapabilities.json',
     why: 'Raises the published guard count above the real one, so the drift this guard exists to catch would read as accurate copy.',
-    find: '135 automated guards',
+    find: '136 automated guards',
     replace: '999 automated guards',
   },
   {
     guard: 'verify-guard-count-copy.mjs',
     file: 'src/pages/Projects.jsx',
     why: 'Raises the published mutation-test count above the real one, so the second drift this guard pins would pass un-noticed.',
-    find: '508 recorded mutation tests',
+    find: '509 recorded mutation tests',
     replace: '999 recorded mutation tests',
   },
   {
@@ -4581,6 +4581,16 @@ export const MUTATIONS = [
     why: 'Accepts an unknown verdict, so the public collector stores free-form strings instead of the documented shape.',
     find: "    if (!VERDICTS.has(String(o.verdict ?? ''))) { rejected++; continue; }",
     replace: "    if (false && !VERDICTS.has(String(o.verdict ?? ''))) { rejected++; continue; }",
+  },
+
+  {
+    guard: 'verify-licence-check.mjs',
+    file: 'server/src/lib/licenceVerify.js',
+    // THE CHECK MUST FAIL CLOSED. Signing the payload STRING instead of its decoded bytes made a genuine licence look forged —
+    // the exact bug this endpoint had for ten minutes. The guard's "a signed licence verifies" case is what notices.
+    why: 'Verifies the signature over the base64 text instead of the decoded payload bytes, so every real licence is called forged.',
+    find: "  const good = verify(null, payloadBytes, key, Buffer.from(sigPart.replace(/-/g, '+').replace(/_/g, '/'), 'base64'));",
+    replace: "  const good = verify(null, Buffer.from(payloadPart), key, Buffer.from(sigPart.replace(/-/g, '+').replace(/_/g, '/'), 'base64'));",
   },
 
 ];

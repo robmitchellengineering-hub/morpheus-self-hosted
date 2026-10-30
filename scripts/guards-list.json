@@ -71,6 +71,7 @@
     "verify-jarvis-voice.mjs",
     "verify-keywords.mjs",
     "verify-lane-partition.mjs",
+    "verify-licence-check.mjs",
     "verify-licence-issuance.mjs",
     "verify-license-terms.mjs",
     "verify-life-files.mjs",
