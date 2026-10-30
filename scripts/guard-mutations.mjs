@@ -3960,8 +3960,8 @@ export const MUTATIONS = [
     // guard's own header says the property is "no code path here fetches an address the caller chose", and a
     // behavioural test cannot see this, because both legitimate callers pass an owned projectId.
     why: 'Puts checkDeployHealth back in PUBLIC_FUNCTIONS, so an unauthenticated caller can make the server fetch an address they choose.',
-    find: "const PUBLIC_FUNCTIONS = new Set(['browseTemplates', 'getPublicTemplate', 'downloadFreeTemplate', 'stripeWebhook', 'createDonationCheckout', 'createCertificationCheckout', 'createBillingPortal', 'submitFeedback', 'corpusIngest', 'licenceCheck', 'listPackages', 'getPackage']);",
-    replace: "const PUBLIC_FUNCTIONS = new Set(['browseTemplates', 'getPublicTemplate', 'downloadFreeTemplate', 'stripeWebhook', 'createDonationCheckout', 'createCertificationCheckout', 'createBillingPortal', 'submitFeedback', 'corpusIngest', 'licenceCheck', 'listPackages', 'getPackage', 'checkDeployHealth']);",
+    find: "const PUBLIC_FUNCTIONS = new Set(['browseTemplates', 'getPublicTemplate', 'downloadFreeTemplate', 'stripeWebhook', 'createDonationCheckout', 'createCertificationCheckout', 'createBillingPortal', 'submitFeedback', 'corpusIngest', 'licenceCheck', 'listPackages', 'getPackage', 'revocations']);",
+    replace: "const PUBLIC_FUNCTIONS = new Set(['browseTemplates', 'getPublicTemplate', 'downloadFreeTemplate', 'stripeWebhook', 'createDonationCheckout', 'createCertificationCheckout', 'createBillingPortal', 'submitFeedback', 'corpusIngest', 'licenceCheck', 'listPackages', 'getPackage', 'revocations', 'checkDeployHealth']);",
   },
   {
     guard: 'verify-deploy-health-scope.mjs',
@@ -4555,14 +4555,14 @@ export const MUTATIONS = [
     guard: 'verify-guard-count-copy.mjs',
     file: 'src/lib/morpheusCapabilities.json',
     why: 'Raises the published guard count above the real one, so the drift this guard exists to catch would read as accurate copy.',
-    find: '138 automated guards',
+    find: '139 automated guards',
     replace: '999 automated guards',
   },
   {
     guard: 'verify-guard-count-copy.mjs',
     file: 'src/pages/Projects.jsx',
     why: 'Raises the published mutation-test count above the real one, so the second drift this guard pins would pass un-noticed.',
-    find: '511 recorded mutation tests',
+    find: '512 recorded mutation tests',
     replace: '999 recorded mutation tests',
   },
   {
@@ -4611,6 +4611,16 @@ export const MUTATIONS = [
     why: 'Treats an unset release token as permission, so anyone can publish a package.',
     find: "  if (!configured) return false;",
     replace: "  if (!configured) return true;",
+  },
+
+  {
+    guard: 'verify-revocation-service.mjs',
+    file: 'server/src/functions/revocations.js',
+    // A DATABASE THAT CANNOT ANSWER MUST NOT READ AS "NOTHING IS REVOKED". That is the fail-open shape this product exists to catch,
+    // and it is one deleted catch block away.
+    why: 'Turns an unreadable database into an empty revocation list, so every revocation silently stops applying.',
+    find: "    return { ok: false, error: 'the revocation list could not be read' };",
+    replace: "    return { ok: true, list: null, count: 0 };",
   },
 
 ];
