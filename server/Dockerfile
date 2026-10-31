@@ -39,6 +39,10 @@ COPY prisma ./prisma
 RUN npx prisma generate
 
 COPY src ./src
+# THE PUBLIC KEY SHIPS IN THE IMAGE. It is public by definition (the SDK verifies with the same file), and without it
+# `licenceCheck` answers "no public key configured" for every licence — a paid customer told their licence cannot be checked. The
+# file was committed but never copied, so the deployed check had never been able to answer at all.
+COPY licence-public.pem ./
 COPY PORTING_GUIDE.md ./
 
 ENV NODE_ENV=production
