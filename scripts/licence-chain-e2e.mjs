@@ -195,6 +195,45 @@ const forget = (name) => rmSync(join(home, '.valiant', name), { force: true });
   }
 }
 
+
+// ── 9. the gate learns a revocation WITHOUT being told to sync ──────────────────────────────────────────────────────
+{
+  const { mintRevocationList } = await import('/Users/mac/code/valiant-verification-sdk/src/revocation.mjs');
+  const { mintLicence } = await import('/Users/mac/code/valiant-verification-sdk/src/stripe-renew.mjs');
+  const r = licenceForEvent(paid(), { keyPem });
+  license(r.licence);
+  forget('seats.json'); forget('revoked.txt'); forget('revocations-seen.json');
+  forget('revocations-meta.json'); forget('revocations.txt');
+  const list = mintRevocationList({ keyPem, jtis: [r.claims.jti], now: Date.now(), kid: 'vvs-2026-10', mint: mintLicence });
+  const portFile = join(work, 'issuer2.port');
+  const srv = spawn(process.execPath, [join(HERE, 'fixture-issuer.mjs'), list.token, portFile], { stdio: ['ignore', 'ignore', 'inherit'] });
+  let port = null;
+  for (let i = 0; i < 200 && !port; i++) {
+    if (existsSync(portFile)) { const v = readFileSync(portFile, 'utf8').trim(); if (/^\d+$/.test(v)) port = v; }
+    if (!port) await new Promise((res) => setTimeout(res, 25));
+  }
+  try {
+    // NO `licence --sync` HERE. The gate is run exactly as a customer runs it, and the revocation must arrive by itself.
+    const g = valiant(['gate'], { VALIANT_SYNC_URL: `http://127.0.0.1:${port}/revocations` });
+    check('the gate refreshes the list on its own', /revocation list refreshed/i.test(g.out), g.out.trim().split('\n').slice(0, 2).join(' | '));
+    check('…and warns that the licence is revoked, with no manual step', /REVOKED/i.test(g.out), g.out.trim().split('\n').slice(-2).join(' | '));
+    const meta = JSON.parse(readFileSync(join(home, '.valiant', 'revocations-meta.json'), 'utf8'));
+    check('…recording when it was fetched, so the next run does not repeat it', typeof meta.fetchedAt === 'string');
+  } finally {
+    srv.kill('SIGTERM');
+  }
+}
+
+// ── 10. an unreachable issuer does not stop, or slow, a gate that can still run offline ─────────────────────────────
+{
+  forget('revocations-meta.json');
+  const before = Date.now();
+  const g = valiant(['gate'], { VALIANT_SYNC_URL: 'http://127.0.0.1:9/revocations' });
+  const took = Date.now() - before;
+  check('an unreachable issuer does not fail the gate', g.code === 0 || g.code === 2, `exit ${g.code}`);
+  check('…and does not hang it (2s cap)', took < 20_000, `${took}ms`);
+}
+
 rmSync(work, { recursive: true, force: true });
 console.log(`\n${wrong === 0 ? 'the chain holds: purchase → licence → install → gate → expiry → grace → revocation → seats → failure paths' : `${wrong} case(s) wrong — the chain is broken somewhere`}\n`);
 process.exit(wrong === 0 ? 0 : 1);
