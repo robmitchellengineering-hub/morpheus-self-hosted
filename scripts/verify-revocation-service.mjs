@@ -6,6 +6,7 @@
 import { claimsForList, TERM_DAYS, MAX_IDS } from '../server/src/lib/revocationList.js';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -17,7 +18,10 @@ const check = (n, ok) => { if (!ok) wrong++; console.log(`  ${ok ? 'PASS' : 'FAI
   check('ids are deduped and trimmed', JSON.stringify(c.revocations) === JSON.stringify(['a', 'b', 'c']));
   check('the token is a revocation list, not a licence', c.kind === 'revocations' && c.v === 1);
   check(`the term is ${TERM_DAYS} days`, Math.round((c.exp - c.iat) / 86_400) === TERM_DAYS);
-  check('it names the key, so a rotated keyring can resolve it', c.kid === 'vvs-2026-10');
+  // THE KID MOVED WITH THE KEY (rotation, 2026-10-31). Pinned to a literal, this assertion would have to be edited on every rotation — so it
+  // asserts the property instead: the list names a key that the deployment actually carries.
+  const ring = readdirSync(join(HERE, '..', 'server', 'licence-keys')).filter((f) => f.endsWith('.pem')).map((f) => f.slice(0, -4));
+  check('it names a key this deployment carries, so a rotated keyring can resolve it', ring.includes(c.kid), `kid ${c.kid} not in [${ring.join(', ')}]`);
   check('an empty list is a valid statement — "nothing is revoked"', claimsForList([]).revocations.length === 0);
   check('the list is bounded, so one huge history cannot make an unverifiable token', claimsForList(Array.from({ length: MAX_IDS + 50 }, (_, i) => `j${i}`)).revocations.length === MAX_IDS);
 }
