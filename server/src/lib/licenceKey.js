@@ -47,18 +47,22 @@ export function issuerKeyPem() {
 }
 
 /**
- * THE KEY CAN COME FROM THE DATABASE. An environment variable is the right home for a signing key, but a deployment whose console needs
- * credentials nobody present has none — and "no licence can ever be issued" is a worse outcome than "the key lives in the database".
- * Precedence is deliberate: the environment wins when set, so moving to a proper secret later is one variable and no code edit.
+ * THE KEY CAN COME FROM SUPABASE VAULT. An environment variable is the best home for a signing key, and it still wins. Where the console
+ * cannot be reached, the next best is Vault: pgsodium encrypts the value with a key that lives OUTSIDE the database, so a database dump —
+ * or a backup — contains ciphertext, and only `postgres`/`service_role` may read the decrypted view (neither `anon` nor `authenticated`
+ * has a grant, so the public API surface cannot read it either).
+ *
+ * Deliberately NOT a `public.issuer_key_pem()` function: PostgREST exposes every function in `public` as an RPC route, so a helper there
+ * would hand the signing key to anyone holding the anon key. This is a SELECT from the vault view, in the app, and nothing else.
  */
 export async function issuerKeyPemAsync(db = null) {
   const env = issuerKeyPem();
   if (env) return { pem: env, from: 'env' };
   if (!db) return { pem: null, from: 'none' };
   try {
-    const rows = await db.$queryRawUnsafe('select pem from issuer_keys order by created_at desc limit 1');
-    const pem = rows?.[0]?.pem;
-    if (pem) return { pem, from: 'database' };
+    const rows = await db.$queryRawUnsafe("select decrypted_secret from vault.decrypted_secrets where name = 'vvs_issuer_key' limit 1");
+    const pem = rows?.[0]?.decrypted_secret;
+    if (pem) return { pem, from: 'vault' };
   } catch { /* a database that cannot answer is a missing key, not a crash */ }
   return { pem: null, from: 'none' };
 }
