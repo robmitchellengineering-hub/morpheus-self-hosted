@@ -59,12 +59,18 @@ const db = (rows) => ({ $queryRaw: async () => rows });
   const list = signLicence(claims, keyPem);
   check('the list is signed and looks like a token', typeof list === 'string' && list.startsWith('vvs1.'));
 
-  // VERIFY IT WITH THE SDK'S OWN VERIFIER, which is the only opinion that matters: a list the SDK cannot read is a list that changes nothing.
-  const { verifyLicence } = await import('/Users/mac/code/valiant-verification-sdk/src/licence.mjs');
-  const v = verifyLicence(list, { publicKeyPem: pubPem });
-  check('…and the SDK verifies it as a revocation list', v.ok === true && v.claims.kind === 'revocations', v.ok ? '' : v.reason);
-  check('…carrying both ids', (v.claims?.revocations ?? []).includes('lic_rev_1') && (v.claims?.revocations ?? []).includes('lic_rev_2'));
-  check('…and an expiry, so a list cannot be trusted for ever', Number.isInteger(v.claims?.exp) && v.claims.exp > now);
+  // VERIFY THE SIGNATURE THE WAY THE SDK DOES — over the decoded payload bytes, never over the base64 text. Done with node's own crypto
+  // rather than importing the SDK, because a guard in this repo may not reach outside it, and "the SDK would accept it" is exactly the
+  // claim being made: same envelope, same key, same bytes.
+  const { createPublicKey, verify } = await import('node:crypto');
+  const [prefix, payloadPart, sigPart] = list.split('.');
+  const payload = Buffer.from(payloadPart, 'base64url');
+  const ok = prefix === 'vvs1.' ? verify === null : verify(null, payload, createPublicKey(pubPem), Buffer.from(sigPart, 'base64url'));
+  const claims2 = JSON.parse(payload.toString('utf8'));
+  check('…and its signature verifies over the payload bytes', ok === true);
+  check('…as a revocation list, not a licence', claims2.kind === 'revocations', JSON.stringify(claims2).slice(0, 100));
+  check('…carrying both ids', (claims2.revocations ?? []).includes('lic_rev_1') && (claims2.revocations ?? []).includes('lic_rev_2'));
+  check('…and an expiry, so a list cannot be trusted for ever', Number.isInteger(claims2.exp) && claims2.exp > now);
 }
 
 // ── no key is still a refusal, not an unsigned list
