@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 let wrong = 0;
-const check = (n, ok) => { if (!ok) wrong++; console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${n}`); };
+const check = (n, ok, detail = '') => { if (!ok) wrong++; console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${n}${ok || !detail ? '' : `\n          ${detail}`}`); };
 
 // a throwaway issuer whose PUBLIC half we point the verifier at — the shipped key signs nothing here.
 const { publicKey, privateKey } = generateKeyPairSync('ed25519');
@@ -67,9 +67,38 @@ const claims = (o = {}) => ({ v: 1, sub: 'acct_1', plan: 'solo', seats: 1, runne
 // ── the endpoint's decisions, by reading it
 {
   const src = readFileSync(join(HERE, '..', 'server', 'src', 'functions', 'licenceCheck.js'), 'utf8');
-  check('the endpoint reports a revocation from the database', /revoked_at/.test(src) && /revoked/.test(src));
-  check('…and an unreadable list is NOT reported as valid', /could not be read/.test(src));
-  check('…using the shape module rather than its own parsing', /normalizeCheckBody/.test(src));
+  // The decision moved to lib/licenceDecision.js so it can be exercised without prisma; these read THAT file, and the endpoint is pinned to
+  // delegating to it — otherwise "the check fails closed" could be true of a module nobody calls.
+  const decisionSrc = readFileSync(join(HERE, '..', 'server/src/lib/licenceDecision.js'), 'utf8');
+  const endpointSrc = readFileSync(join(HERE, '..', 'server/src/functions/licenceCheck.js'), 'utf8');
+  check('the decision reads a revocation from the database', /revoked_at/.test(decisionSrc) && /revoked/.test(decisionSrc));
+  check('…and an unreadable list is NOT reported as valid', /could not be read/.test(decisionSrc));
+  check('…using the shape module rather than its own parsing', /normalizeCheckBody/.test(decisionSrc));
+  check('…and the public endpoint delegates to it', /decideCheck/.test(endpointSrc));
+}
+
+
+// ── the database is the only fact the token cannot carry, so its failure must be executable
+{
+  const { lookupRevocation } = await import('../server/src/lib/licenceDecision.js');
+  const ok = await lookupRevocation('j1', { $queryRaw: async () => [{ revoked_at: null }] });
+  check('a licence with no revocation row reads as not revoked', ok === false);
+  const revoked = await lookupRevocation('j1', { $queryRaw: async () => [{ revoked_at: new Date() }] });
+  check('…and a revoked_at reads as revoked', revoked === true);
+  let threw = false;
+  try { await lookupRevocation('j1', { $queryRaw: async () => { throw new Error('connection terminated'); } }); } catch { threw = true; }
+  check('an unreadable database THROWS, so the endpoint can answer "could not be read"', threw);
+}
+
+
+// ── and the ENDPOINT, not just the lookup, fails closed when the database does not answer
+{
+  const { decideCheck } = await import('../server/src/lib/licenceDecision.js');
+  const token = signLicence(claims({ kid: 'vvs-test' }), keyPem);
+  const reply = await decideCheck({ body: { licence: token }, db: { $queryRaw: async () => { throw new Error('connection terminated'); } } });
+  check('an unreadable database is NOT reported as valid', reply.valid === false, JSON.stringify(reply).slice(0, 160));
+  check('…and the reason names the list that could not be read', /could not be read/.test(reply.why ?? ''), `why=${reply.why}`);
+  check('…while a readable, unrevoked licence is valid', (await decideCheck({ body: { licence: token }, db: { $queryRaw: async () => [{ revoked_at: null }] } })).valid === true);
 }
 
 console.log(`\n${wrong === 0 ? 'the public check verifies, reports revocation, and fails closed' : `${wrong} case(s) wrong — fix before merging`}\n`);
