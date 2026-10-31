@@ -9,10 +9,14 @@
 // expired one is refused, and the list that comes out is signed, carries a kid, and verifies with the SDK's own verifier. What is left
 // unproven — and stated below rather than implied — is only that the key reaches the deployment.
 import { generateKeyPairSync } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { decideCheck } from '../server/src/lib/licenceDecision.js';
 import { claimsForList } from '../server/src/lib/revocationList.js';
 import { signLicence } from '../server/src/lib/licenceKey.js';
 
+const HERE = dirname(fileURLToPath(import.meta.url));
 let wrong = 0;
 const check = (name, ok, detail = '') => {
   if (!ok) wrong++;
@@ -84,6 +88,39 @@ const db = (rows) => ({ $queryRaw: async () => rows });
   check('with no key the endpoint refuses rather than publishing an unsigned list', !!threw && /VVS_ISSUER_KEY_PEM/.test(threw.message), threw?.message);
   if (saved) process.env.VVS_ISSUER_KEY_PEM = saved;
   if (savedAlt) process.env.VALIANT_ISSUER_KEY = savedAlt;
+}
+
+
+// ── where the signing key comes from, and what it must never be
+{
+  const { issuerKeyPemAsync } = await import('../server/src/lib/licenceKey.js');
+  // The section above sets the environment key so the endpoints can sign; the precedence test needs it absent to see the Vault path.
+  const savedEnv = process.env.VVS_ISSUER_KEY_PEM;
+  delete process.env.VVS_ISSUER_KEY_PEM;
+  const vaultDb = { $queryRawUnsafe: async () => [{ decrypted_secret: keyPem }] };
+  const fromVault = await issuerKeyPemAsync(vaultDb);
+  check('the key can come from Vault when the environment has none', fromVault.from === 'vault' && fromVault.pem === keyPem, fromVault.from);
+
+  const saved = savedEnv;
+  process.env.VVS_ISSUER_KEY_PEM = keyPem;
+  const fromEnv = await issuerKeyPemAsync(vaultDb);
+  check('…but the environment wins when it is set, so the proper secret can be restored with no code edit', fromEnv.from === 'env');
+  if (saved) process.env.VVS_ISSUER_KEY_PEM = saved; else delete process.env.VVS_ISSUER_KEY_PEM;
+  delete process.env.VVS_ISSUER_KEY_PEM;   // broken-db case must also see no environment key
+
+  const brokenDb = { $queryRawUnsafe: async () => { throw new Error('connection terminated'); } };
+  const none = await issuerKeyPemAsync(brokenDb);
+  check('…and a database that will not answer is a missing key, not a crash', none.from === 'none' && none.pem === null);
+
+  // THE EXPOSURE THIS MUST NEVER HAVE: PostgREST turns every `public` function into an RPC route, so a helper in `public` would give the
+  // signing key to anyone holding the anon key. The read is a SELECT in the app; assert nothing in the repo creates such a function.
+  const { readdirSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const files = [];
+  const walk = (d) => { for (const e of readdirSync(d, { withFileTypes: true })) { const p2 = join(d, e.name); if (e.isDirectory()) { if (e.name !== 'node_modules') walk(p2); } else if (/\.(js|mjs|sql)$/.test(e.name)) files.push(p2); } };
+  walk(join(HERE, '..', 'server', 'src'));
+  const leaky = files.filter((f) => /create( or replace)? function public\.issuer/i.test(readFileSync(f, 'utf8')));
+  check('no public function exposes the signing key over RPC', leaky.length === 0, leaky.join(', '));
 }
 
 // What this file does NOT prove, said out loud so nobody reads a green run as the deployment being done.
