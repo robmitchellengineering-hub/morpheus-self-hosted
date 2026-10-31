@@ -1,0 +1,87 @@
+#!/usr/bin/env node
+// verify-licence-endpoints.mjs — the two public endpoints, with their real code, driven to a real answer.
+//
+// WHAT THIS ADDS. `verify-licence-check.mjs` tests the decision and the shape. Nothing tested the ENDPOINTS as they will run in production:
+// `licenceCheck` reading a row, `revocations` building and signing a list. Both spend most of the licence goal unproven because the
+// deployment had no key — and "it will work once the key is there" is exactly the sentence this project exists to refuse.
+//
+// So the key is injected and the database is faked. What that proves is the code: a valid licence verifies, a revoked one is refused, an
+// expired one is refused, and the list that comes out is signed, carries a kid, and verifies with the SDK's own verifier. What is left
+// unproven — and stated below rather than implied — is only that the key reaches the deployment.
+import { generateKeyPairSync } from 'node:crypto';
+import { decideCheck } from '../server/src/lib/licenceDecision.js';
+import { claimsForList } from '../server/src/lib/revocationList.js';
+import { signLicence } from '../server/src/lib/licenceKey.js';
+
+let wrong = 0;
+const check = (name, ok, detail = '') => {
+  if (!ok) wrong++;
+  console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${name}${ok || !detail ? '' : `\n          ${detail}`}`);
+};
+
+// A throwaway issuer. The SDK is told to trust its public half, so the verification below is the same code a customer's machine runs.
+const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+const keyPem = privateKey.export({ type: 'pkcs8', format: 'pem' });
+const pubPem = publicKey.export({ type: 'spki', format: 'pem' });
+process.env.VALIANT_LICENCE_PUBLIC_KEY = pubPem;
+process.env.VVS_ISSUER_KEY_PEM = keyPem;
+
+const now = Math.floor(Date.now() / 1000);
+const base = { v: 1, sub: 'cus_endpoint', plan: 'solo', seats: 1, runners: 1, iat: now - 60, exp: now + 30 * 86_400, kid: 'vvs-2026-10', jti: 'lic_ep_1' };
+const token = signLicence(base, keyPem);
+const db = (rows) => ({ $queryRaw: async () => rows });
+
+// ── the check, answering all three questions
+{
+  const live = await decideCheck({ body: { licence: token }, db: db([{ revoked_at: null }]), now });
+  check('a live licence is valid', live.valid === true && live.jti === 'lic_ep_1', JSON.stringify(live).slice(0, 160));
+  check('…and it echoes the plan and seats, so support can answer from the reply', live.plan === 'solo' && live.seats === 1);
+
+  const revoked = await decideCheck({ body: { licence: token }, db: db([{ revoked_at: new Date(now * 1000) }]), now });
+  check('a revoked licence is refused, and says it is revoked', revoked.valid === false && revoked.revoked === true, revoked.why);
+
+  const expiredToken = signLicence({ ...base, jti: 'lic_ep_2', iat: now - 40 * 86_400, exp: now - 86_400 }, keyPem);
+  const expired = await decideCheck({ body: { licence: expiredToken }, db: db([{ revoked_at: null }]), now });
+  check('an expired licence is refused with "expired"', expired.valid === false && /expired/.test(expired.why), expired.why);
+
+  const foreign = signLicence(base, generateKeyPairSync('ed25519').privateKey.export({ type: 'pkcs8', format: 'pem' }));
+  const forged = await decideCheck({ body: { licence: foreign }, db: db([{ revoked_at: null }]), now });
+  check('a licence signed by another key is refused', forged.valid === false && /signature/.test(forged.why), forged.why);
+
+  const unreadable = await decideCheck({ body: { licence: token }, db: { $queryRaw: async () => { throw new Error('connection terminated'); } }, now });
+  check('a database that will not answer is not reported valid', unreadable.valid === false && /could not be read/.test(unreadable.why), unreadable.why);
+}
+
+// ── the revocation list, built and signed exactly as the endpoint builds it
+{
+  const claims = claimsForList(['lic_rev_1', 'lic_rev_2']);
+  check('the list names the revoked ids and carries a kid', claims.revocations.length === 2 && !!claims.kid, JSON.stringify(claims).slice(0, 120));
+  const list = signLicence(claims, keyPem);
+  check('the list is signed and looks like a token', typeof list === 'string' && list.startsWith('vvs1.'));
+
+  // VERIFY IT WITH THE SDK'S OWN VERIFIER, which is the only opinion that matters: a list the SDK cannot read is a list that changes nothing.
+  const { verifyLicence } = await import('/Users/mac/code/valiant-verification-sdk/src/licence.mjs');
+  const v = verifyLicence(list, { publicKeyPem: pubPem });
+  check('…and the SDK verifies it as a revocation list', v.ok === true && v.claims.kind === 'revocations', v.ok ? '' : v.reason);
+  check('…carrying both ids', (v.claims?.revocations ?? []).includes('lic_rev_1') && (v.claims?.revocations ?? []).includes('lic_rev_2'));
+  check('…and an expiry, so a list cannot be trusted for ever', Number.isInteger(v.claims?.exp) && v.claims.exp > now);
+}
+
+// ── no key is still a refusal, not an unsigned list
+{
+  const saved = process.env.VVS_ISSUER_KEY_PEM;
+  const savedAlt = process.env.VALIANT_ISSUER_KEY;
+  delete process.env.VVS_ISSUER_KEY_PEM;
+  delete process.env.VALIANT_ISSUER_KEY;
+  let threw = null;
+  try { signLicence(claimsForList(['x'])); } catch (e) { threw = e; }
+  check('with no key the endpoint refuses rather than publishing an unsigned list', !!threw && /VVS_ISSUER_KEY_PEM/.test(threw.message), threw?.message);
+  if (saved) process.env.VVS_ISSUER_KEY_PEM = saved;
+  if (savedAlt) process.env.VALIANT_ISSUER_KEY = savedAlt;
+}
+
+// What this file does NOT prove, said out loud so nobody reads a green run as the deployment being done.
+console.log('\n  NOT PROVEN HERE  that the key is present in the deployment. That is one environment variable and it is checked by');
+console.log('                   fetch the endpoints: with no key they answer "no issuer key", which is the honest 503.');
+console.log(`\n${wrong === 0 ? 'the endpoints answer correctly when the key is present' : `${wrong} case(s) wrong`}\n`);
+process.exit(wrong === 0 ? 0 : 1);

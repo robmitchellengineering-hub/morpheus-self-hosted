@@ -4630,6 +4630,13 @@ export const MUTATIONS = [
     find: 'const term = d.grace ? d.days : days;',
     replace: 'const term = days;',
   },
+  {
+    guard: 'verify-licence-endpoints.mjs',
+    file: 'server/src/lib/revocationList.js',
+    why: 'Mints a revocation list that does not expire — the guard asserts the list carries a future exp, because a list trusted for ever can never be withdrawn or corrected.',
+    find: 'exp: iat + Math.max(1, termDays) * 86_400,',
+    replace: 'exp: iat,',
+  },
 ];
 
 // ── UNPROVEN GUARDS, COMING DOWN ────────────────────────────────────────────
