@@ -17,7 +17,7 @@ import { prisma } from '../db.js';
 import { computeSplit } from '../lib/stripe.js';
 import { licenceForEvent } from '../lib/valiantLicence.js';
 import * as licencePurchase from '../lib/licencePurchase.js';
-import { issuerKeyPem } from '../lib/licenceKey.js';
+import { issuerKeyPem, issuerKeyPemAsync } from '../lib/licenceKey.js';
 import { sendMail } from '../lib/mailer.js';
 
 function verifyStripeSignature(rawBody, signature, secret) {
@@ -159,8 +159,10 @@ export default async function handler({ req, res }) {
   // licence would have been sold and never issued, and a renewal would never have arrived.
   if (licencePurchase.handles(event.type)) {
     try {
+      // The mint uses the environment key when there is one, and the stored key when the console cannot be reached.
+      const signingKey = await issuerKeyPemAsync(prisma);
       const decision = await licencePurchase.decideEvent(event, {
-        keyPem: issuerKeyPem(),
+        keyPem: signingKey.pem,
         // A retried event must not mint a second licence: the event id is recorded on the row that the first delivery created.
         licenceExists: async (eventKey) => {
           const rows = await prisma.$queryRawUnsafe('select 1 from licences where stripe_session_id = $1 limit 1', eventKey);

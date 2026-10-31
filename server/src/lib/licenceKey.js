@@ -46,6 +46,23 @@ export function issuerKeyPem() {
   return process.env.VVS_ISSUER_KEY_PEM || process.env.VALIANT_ISSUER_KEY || null;
 }
 
+/**
+ * THE KEY CAN COME FROM THE DATABASE. An environment variable is the right home for a signing key, but a deployment whose console needs
+ * credentials nobody present has none — and "no licence can ever be issued" is a worse outcome than "the key lives in the database".
+ * Precedence is deliberate: the environment wins when set, so moving to a proper secret later is one variable and no code edit.
+ */
+export async function issuerKeyPemAsync(db = null) {
+  const env = issuerKeyPem();
+  if (env) return { pem: env, from: 'env' };
+  if (!db) return { pem: null, from: 'none' };
+  try {
+    const rows = await db.$queryRawUnsafe('select pem from issuer_keys order by created_at desc limit 1');
+    const pem = rows?.[0]?.pem;
+    if (pem) return { pem, from: 'database' };
+  } catch { /* a database that cannot answer is a missing key, not a crash */ }
+  return { pem: null, from: 'none' };
+}
+
 export function signLicence(claims, privateKeyPem = issuerKeyPem()) {
   if (!privateKeyPem) {
     throw Object.assign(

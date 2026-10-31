@@ -6,7 +6,7 @@
 // FAILS CLOSED: with no signing key the endpoint refuses rather than publishing an unsigned list, because an unsigned list is a wish.
 import { prisma } from '../db.js';
 import { claimsForList } from '../lib/revocationList.js';
-import { signLicence } from '../lib/licenceKey.js';
+import { signLicence, issuerKeyPemAsync } from '../lib/licenceKey.js';
 
 export default async function revocations() {
   let jtis;
@@ -20,9 +20,11 @@ export default async function revocations() {
   }
 
   const claims = claimsForList(jtis);
+  // The environment wins; the database is the fallback. Refusing "no issuer key" while one is stored would be the deployment lying.
+  const key = await issuerKeyPemAsync(prisma);
   let list;
   try {
-    list = signLicence(claims);
+    list = signLicence(claims, key.pem ?? undefined);
   } catch {
     return { ok: false, error: 'this deployment has no issuer key, so no signed list can be produced' };
   }
