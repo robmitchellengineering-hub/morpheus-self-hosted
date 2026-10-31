@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// verify-licence-end-to-end.mjs — the whole licence chain, without Stripe and without a network.
+// licence-chain-e2e.mjs — the whole licence chain, without Stripe and without a network.
 //
 // The unit tests prove the mint; the SDK's tests prove the gate. Neither proves they MEET: a licence this service signs has to install on
 // a machine and open a gate, and stop opening it when it expires or is revoked. That meeting point is where a licence product actually
