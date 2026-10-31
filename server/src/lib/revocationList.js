@@ -10,7 +10,7 @@ export const TERM_DAYS = 90;
 export const MAX_IDS = 1000;
 
 /** The claims for a list. Pure, so the guard can prove the shape without a database. */
-export function claimsForList(jtis, { now = Date.now(), kid = 'vvs-2026-10', termDays = TERM_DAYS } = {}) {
+export function claimsForList(jtis, { now = Date.now(), kid = 'vvs-2026-11', termDays = TERM_DAYS } = {}) {
   const ids = [...new Set((jtis ?? []).map((j) => String(j ?? '').trim()).filter(Boolean))].slice(0, MAX_IDS);
   const iat = Math.floor(now / 1000);
   return { v: 1, kind: 'revocations', iat, exp: iat + Math.max(1, termDays) * 86_400, revocations: ids, kid };

@@ -62,7 +62,7 @@ export function claimsFor(event, { days = LICENCE_DAYS, grace = false, revocatio
       // THE KEY ID, so a verifier with a keyring can pick the right key. Omitting it made `valiant licence --status` refuse a licence
       // this service had just minted — "several signing keys but the licence names no key id" — which reads as a bad licence rather
       // than an incomplete claim. `signLicence` signs with VVS_ISSUER_KEY_PEM, so the id must name that key.
-      kid: process.env.VVS_KID || 'vvs-2026-10',
+      kid: process.env.VVS_KID || 'vvs-2026-11',
       // A grace licence is labelled, so support can tell "we granted you a week" from "you paid".
       ...(grace ? { grace: true } : {}),
       ...(Array.isArray(revocations) && revocations.length ? { revocations } : {}),
