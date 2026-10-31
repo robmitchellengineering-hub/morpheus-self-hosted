@@ -16,6 +16,7 @@ import crypto from 'node:crypto';
 import { prisma } from '../db.js';
 import { computeSplit } from '../lib/stripe.js';
 import { licenceForEvent } from '../lib/valiantLicence.js';
+import * as licencePurchase from '../lib/licencePurchase.js';
 import { issuerKeyPem } from '../lib/licenceKey.js';
 import { sendMail } from '../lib/mailer.js';
 
@@ -152,12 +153,57 @@ export default async function handler({ req, res }) {
     return { received: true };
   }
 
+  // ── THE LICENCE DOORS ────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  // A monthly licence is sold as a Stripe subscription, so what mints it is `invoice.paid` (the first and every renewal) and what grants
+  // grace is `invoice.payment_failed`. Neither was handled: the webhook ignored every event except `checkout.session.completed`, so a
+  // licence would have been sold and never issued, and a renewal would never have arrived.
+  if (licencePurchase.handles(event.type)) {
+    try {
+      const decision = await licencePurchase.decideEvent(event, {
+        keyPem: issuerKeyPem(),
+        // A retried event must not mint a second licence: the event id is recorded on the row that the first delivery created.
+        licenceExists: async (eventKey) => {
+          const rows = await prisma.$queryRawUnsafe('select 1 from licences where stripe_session_id = $1 limit 1', eventKey);
+          return Array.isArray(rows) && rows.length > 0;
+        },
+      });
+      const settled = await licencePurchase.applyDecision(decision, {
+        storeLicence: async (row) => {
+          await prisma.$executeRawUnsafe(
+            'insert into licences (jti, plan, seats, kid, issued_at, expires_at, stripe_session_id, note) values ($1,$2,$3,$4,$5,$6,$7,$8)',
+            row.jti, row.plan, row.seats, row.kid, row.issued_at, row.expires_at, row.stripe_session_id, row.note,
+          );
+          return true;
+        },
+        mailer: sendMail,
+        revokeLicence: async (subscription) => {
+          if (!subscription) return 0;
+          const r2 = await prisma.$executeRawUnsafe('update licences set revoked_at = now() where revoked_at is null and note like $1', `%sub:${subscription}%`);
+          return Number(r2) || 0;
+        },
+      });
+      console.log(`licence: ${settled.act}${settled.jti ? ` jti=${settled.jti}` : ''}${settled.why ? ` (${settled.why})` : ''}`);
+      return { received: true, licence: { act: settled.act, stored: !!settled.stored, mailed: !!settled.mailed } };
+    } catch (e) {
+      // A licence that could not be minted must not report success: Stripe would stop retrying and the buyer would have paid for nothing.
+      console.error('stripeWebhook: licence handling failed:', e.message);
+      res.status(500).json({ error: 'licence handling failed' });
+      return;
+    }
+  }
+
   if (event.type !== 'checkout.session.completed') {
     return { received: true, ignored: event.type };
   }
 
   const session = event.data?.object || {};
   const metadata = session.metadata || {};
+
+  // A LICENCE CHECKOUT COMPLETING IS NOT A MINT. The subscription's first `invoice.paid` mints, and it arrives separately — so this event is
+  // acknowledged and nothing else: falling through to the marketplace purchases below would try to read template fields it does not have.
+  if (metadata.type === 'vvs_licence') {
+    return { received: true, licence: { checkout: 'completed', minted: false, note: 'the invoice.paid event mints the licence' } };
+  }
 
   // Donations (landing page's "KEEP MORPHEUS ALIVE" widget) have no
   // template/buyer — branch off before the marketplace-purchase checks
