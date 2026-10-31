@@ -21,6 +21,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const HARD = [
   'verify-licence-issuance.mjs',
   'verify-licence-purchase.mjs',
+  'verify-licence-endpoints.mjs',
   'verify-drift.mjs',
   'verify-ai-roles.mjs',
   'verify-review-context.mjs',

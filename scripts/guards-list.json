@@ -137,6 +137,7 @@
     "verify-working-copy.mjs",
     "verify-workspace-search.mjs",
     "verify-wp-rollback.mjs",
-    "verify-licence-purchase.mjs"
+    "verify-licence-purchase.mjs",
+    "verify-licence-endpoints.mjs"
   ]
 }

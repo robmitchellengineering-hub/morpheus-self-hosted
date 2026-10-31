@@ -4555,14 +4555,14 @@ export const MUTATIONS = [
     guard: 'verify-guard-count-copy.mjs',
     file: 'src/lib/morpheusCapabilities.json',
     why: 'Raises the published guard count above the real one, so the drift this guard exists to catch would read as accurate copy.',
-    find: '140 automated guards',
+    find: '141 automated guards',
     replace: '999 automated guards',
   },
   {
     guard: 'verify-guard-count-copy.mjs',
     file: 'src/pages/Projects.jsx',
     why: 'Raises the published mutation-test count above the real one, so the second drift this guard pins would pass un-noticed.',
-    find: '513 recorded mutation tests',
+    find: '514 recorded mutation tests',
     replace: '999 recorded mutation tests',
   },
   {
@@ -4629,6 +4629,13 @@ export const MUTATIONS = [
     why: 'Grants a failed payment a full month instead of grace — the guard asserts GRACE_DAYS on invoice.payment_failed and must catch it.',
     find: 'const term = d.grace ? d.days : days;',
     replace: 'const term = days;',
+  },
+  {
+    guard: 'verify-licence-endpoints.mjs',
+    file: 'server/src/lib/revocationList.js',
+    why: 'Mints a revocation list that does not expire — the guard asserts the list carries a future exp, because a list trusted for ever can never be withdrawn or corrected.',
+    find: 'exp: iat + Math.max(1, termDays) * 86_400,',
+    replace: 'exp: iat,',
   },
 ];
 
