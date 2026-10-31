@@ -27,7 +27,11 @@ export default async function getPackage({ body, query, res }) {
   res.setHeader('content-type', 'application/octet-stream');
   res.setHeader('content-disposition', `attachment; filename="${row.name}-${row.version}.tgz"`);
   res.setHeader('x-checksum-sha256', row.sha256);
-  res.setHeader('cache-control', 'public, max-age=31536000, immutable');
+  // A MUTABLE URL MUST NOT BE CACHED AS IMMUTABLE. `version=latest` resolves to a different build tomorrow, so declaring it
+  // immutable for a year makes a client keep the first answer — measured: after 0.3.1 was published, resolving `latest` installed
+  // 0.3.0 straight from the client's own cache. A pinned version really is immutable and keeps the long cache.
+  const pinned = version !== 'latest';
+  res.setHeader('cache-control', pinned ? 'public, max-age=31536000, immutable' : 'no-store, must-revalidate');
   res.end(Buffer.from(row.bytes));
   return undefined;   // the response is written; the dispatcher must not send JSON over it
 }
