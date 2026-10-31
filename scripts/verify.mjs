@@ -11,6 +11,7 @@
 //
 // Run:  node scripts/verify.mjs
 import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
@@ -19,6 +20,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // Hard gates — any failure here fails the whole run.
 const HARD = [
   'verify-licence-issuance.mjs',
+  'verify-licence-purchase.mjs',
   'verify-drift.mjs',
   'verify-ai-roles.mjs',
   'verify-review-context.mjs',
@@ -164,6 +166,22 @@ for (const script of HARD) {
   results.push({ name: script, status: r.status });
 }
 
+// THE LICENCE CHAIN — the issuer and the gate driven against each other. It is the only check that proves they MEET: the issuer's own
+// suite proves the mint, the SDK's own suite proves the gate, and neither proves a licence this service signs opens a gate on a machine.
+// It needs a `valiant` CLI; a CI runner does not have one, and a missing toolchain is not a licence defect — so without it the step reports
+// NOT VERIFIED (exit 2, never a pass) instead of failing the build.
+const cliFound = Boolean(process.env.VALIANT_CLI)
+  || existsSync(resolve(HERE, '..', '..', 'valiant-verification-sdk', 'bin', 'valiant.mjs'))
+  || spawnSync('sh', ['-c', 'command -v valiant'], { stdio: 'ignore' }).status === 0;
+let chainStatus = 2;
+if (cliFound) {
+  const chain = spawnSync(process.execPath, [resolve(HERE, 'licence-chain-e2e.mjs')], { stdio: 'inherit' });
+  chainStatus = chain.status ?? 2;
+} else {
+  console.log('  NOT VERIFIED  the licence chain — no valiant CLI on this machine (set VALIANT_CLI to run it)');
+}
+results.push({ name: 'licence-chain-e2e.mjs', status: chainStatus });
+
 // The production drift check is reported separately: exit 2 means "could not
 // reach production", which is NOT a pass and is called out loudly, but it only
 // blocks a merge when the change touches schema.prisma (see the rule in
@@ -182,14 +200,19 @@ results.push({ name: 'verify-billing-ledger.mjs', status: ledger.status });
 console.log('\n──────────────────────────────');
 console.log('Summary');
 for (const { name, status } of results) {
-  const label = status === 0 ? 'PASS' : status === 2 ? 'NOT VERIFIED (no prod credential)' : `FAIL (${status})`;
+  const label = status === 0 ? 'PASS'
+    : name === 'licence-chain-e2e.mjs' && status === 2 ? 'NOT VERIFIED (no valiant CLI)'
+    : status === 2 ? 'NOT VERIFIED (no prod credential)'
+    : `FAIL (${status})`;
   console.log(`  ${label.padEnd(30)} ${name}`);
 }
 
+// The chain blocks a merge only when it actually ran (status 1). NOT VERIFIED (2) is reported, never hidden, and never a pass.
+const chainFailure = results.filter((r) => r.name === 'licence-chain-e2e.mjs' && r.status === 1);
 const hardFailures = results.filter((r) => HARD.includes(r.name) && r.status !== 0);
 const driftBlocking = drift.status === 1;
 
-if (hardFailures.length || driftBlocking) {
+if (hardFailures.length || driftBlocking || chainFailure.length) {
   console.log('\n  ✗ verify failed — fix before merging.\n');
   process.exit(1);
 }
