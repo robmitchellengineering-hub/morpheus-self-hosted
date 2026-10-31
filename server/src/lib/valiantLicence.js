@@ -16,6 +16,9 @@ import crypto from 'node:crypto';
 export const LICENCE_DAYS = 30;
 /** The grace a failed payment buys: long enough for a card change, short enough to matter. */
 export const GRACE_DAYS = 7;
+/** One CI runner per seat, so five seats allow five runners (Rob, 2026-11-02). The SDK already mints this; this issuer did not, so a
+ *  licence from here stated only machines and the runner allowance existed by accident, as the SDK's fallback. */
+export const RUNNERS_PER_SEAT = 1;
 
 const b64url = (b) => Buffer.from(b).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
@@ -51,10 +54,15 @@ export function claimsFor(event, { days = LICENCE_DAYS, grace = false, revocatio
       sub: String(account),
       plan: quantity > 1 ? 'team' : 'solo',
       seats: Number(quantity) || 1,
+      runners: Math.max(1, (Number(quantity) || 1) * RUNNERS_PER_SEAT),
       jti: `lic_${t.toString(36)}_${crypto.randomBytes(4).toString('hex')}`,
       iat: t,
       exp: t + Math.round(days * 86_400),
       src: 'stripe',
+      // THE KEY ID, so a verifier with a keyring can pick the right key. Omitting it made `valiant licence --status` refuse a licence
+      // this service had just minted — "several signing keys but the licence names no key id" — which reads as a bad licence rather
+      // than an incomplete claim. `signLicence` signs with VVS_ISSUER_KEY_PEM, so the id must name that key.
+      kid: process.env.VVS_KID || 'vvs-2026-10',
       // A grace licence is labelled, so support can tell "we granted you a week" from "you paid".
       ...(grace ? { grace: true } : {}),
       ...(Array.isArray(revocations) && revocations.length ? { revocations } : {}),
