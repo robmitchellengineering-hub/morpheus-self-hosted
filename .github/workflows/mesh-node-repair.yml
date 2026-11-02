@@ -43,6 +43,7 @@ on:
         type: choice
         options:
           - start-sshd
+          - restart-tailscale
           - report
 
 permissions:
@@ -93,6 +94,25 @@ jobs:
           $key = "$env:ProgramData\ssh\administrators_authorized_keys"
           "admin keys : " + $(if (Test-Path $key) { "present, $((Get-Item $key).Length) bytes" } else { 'MISSING' })
           "gh         : " + $(if (Get-Command gh -ErrorAction SilentlyContinue) { 'present' } else { 'not installed' })
+
+      - name: Restart the Tailscale service (the mesh path, not the internet path)
+        if: steps.who.outputs.match == 'true' && github.event.inputs.action == 'restart-tailscale'
+        shell: powershell
+        run: |
+          # A node can reach GitHub and still be unreachable on the tailnet. Measured 2026-11-02 on RME1: its runner
+          # was talking to GitHub while `tailscale ping` timed out and the peer sat on a relay, and sshd was Running
+          # with port 22 LISTENING the whole time. The service was the fault, not sshd, and nothing in this lane could
+          # restart it - which is the same circularity this workflow exists to remove.
+          $svc = Get-Service Tailscale -ErrorAction SilentlyContinue
+          if (-not $svc) { Write-Output "no Tailscale service on this node"; exit 1 }
+          Write-Output ("before: " + $svc.Status)
+          Restart-Service Tailscale -Force
+          Start-Sleep -Seconds 10
+          Write-Output ("after : " + (Get-Service Tailscale).Status)
+          $ip = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -like '100.*' } | Select-Object -First 1).IPAddress
+          Write-Output ("tailnet ip: " + $ip)
+          $ts = "$env:ProgramFiles\Tailscale\tailscale.exe"
+          if (Test-Path $ts) { & $ts status 2>&1 | Select-Object -First 3 } else { Write-Output "tailscale.exe not at the usual path" }
 
       - name: Repair - start sshd and set it to Automatic
         if: steps.who.outputs.match == 'true' && github.event.inputs.action == 'start-sshd'
