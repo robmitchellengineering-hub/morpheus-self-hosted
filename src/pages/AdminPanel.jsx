@@ -4,11 +4,12 @@ import {
   ShieldCheck, Loader2, ArrowLeft, Users, Activity, DollarSign,
   Settings2, ListChecks, ScrollText, Plus, Trash2, Check, RefreshCw,
   AlertTriangle, CheckCircle2, XCircle, Terminal, Cpu, FileText, Download, FileDown,
-  Gift,
+  Gift, KeyRound,
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import { base44 } from '@/api/base44Client';
 import AdminPackagesCard from '@/pages/AdminPackagesCard';
+import AdminLicences from '@/pages/AdminLicences';
 import MatrixRain from '@/components/matrix/MatrixRain';
 
 // Owner/Admin Control Panel (Feature Backlog #8). New — not a base44 port.
@@ -22,6 +23,7 @@ const TABS = [
   { id: 'settings', label: 'CONFIG', icon: Settings2 },
   { id: 'tasks', label: 'PUNCH LIST', icon: ListChecks },
   { id: 'ops', label: 'OPS CONSOLE', icon: Terminal },
+  { id: 'licences', label: 'LICENCES', icon: KeyRound },
   { id: 'audit', label: 'AUDIT LOG', icon: ScrollText },
 ];
 
@@ -1293,6 +1295,7 @@ export default function AdminPanel() {
         {tab === 'settings' && <SettingsTab />}
         {tab === 'tasks' && <TasksTab />}
         {tab === 'ops' && <OpsTab />}
+        {tab === 'licences' && <AdminLicences />}
         {tab === 'audit' && <AuditLogTab />}
       </div>
     </div>

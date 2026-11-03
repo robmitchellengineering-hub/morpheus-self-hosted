@@ -4555,7 +4555,7 @@ export const MUTATIONS = [
     guard: 'verify-guard-count-copy.mjs',
     file: 'src/lib/morpheusCapabilities.json',
     why: 'Raises the published guard count above the real one, so the drift this guard exists to catch would read as accurate copy.',
-    find: '141 automated guards',
+    find: '142 automated guards',
     replace: '999 automated guards',
   },
   {
@@ -4629,6 +4629,13 @@ export const MUTATIONS = [
     why: 'Grants a failed payment a full month instead of grace — the guard asserts GRACE_DAYS on invoice.payment_failed and must catch it.',
     find: 'const term = d.grace ? d.days : days;',
     replace: 'const term = days;',
+  },
+  {
+    guard: 'verify-admin-licences.mjs',
+    file: 'server/src/lib/licenceRegister.js',
+    why: 'Lets a signed-in non-admin read the register — the guard asserts 403, because this is the one read that can see every account.',
+    find: 'if (user.role !== "admin") throw Object.assign(new Error("The licence register is admin-only."), { status: 403 });',
+    replace: 'if (false) throw Object.assign(new Error("The licence register is admin-only."), { status: 403 });',
   },
   {
     guard: 'verify-licence-endpoints.mjs',
