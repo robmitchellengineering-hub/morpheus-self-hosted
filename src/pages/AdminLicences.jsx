@@ -147,7 +147,7 @@ export default function AdminLicences() {
                 return (
                   <tr key={r.jti} className="border-b border-primary/10">
                     <td className="py-2 pr-3 text-ink-strong">{r.owner?.email ?? '—'}</td>
-                    <td className="py-2 pr-3 font-mono text-[11px] text-ink-strong">{r.jti}</td>
+                    <td className="py-2 pr-3 font-mono text-[11px] text-ink-max">{r.jti}</td>
                     <td className="py-2 pr-3 text-ink-strong">{r.plan}</td>
                     <td className="py-2 pr-3 text-ink-strong">{r.seats}</td>
                     <td className="py-2 pr-3 text-ink-strong">{fmt(r.issuedAt)}</td>
