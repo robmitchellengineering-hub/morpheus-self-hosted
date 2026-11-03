@@ -22,6 +22,7 @@ const HARD = [
   'verify-licence-issuance.mjs',
   'verify-licence-purchase.mjs',
   'verify-licence-endpoints.mjs',
+  'verify-admin-licences.mjs',
   'verify-drift.mjs',
   'verify-ai-roles.mjs',
   'verify-review-context.mjs',
