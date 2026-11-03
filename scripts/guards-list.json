@@ -1,8 +1,9 @@
 {
   "generatedFrom": "ci.yml guards job",
-  "count": 128,
+  "count": 138,
   "guards": [
     "context.mjs",
+    "verify-admin-licences.mjs",
     "verify-ai-cost-claims.mjs",
     "verify-ai-roles.mjs",
     "verify-app-capability-creds.mjs",
@@ -72,7 +73,9 @@
     "verify-keywords.mjs",
     "verify-lane-partition.mjs",
     "verify-licence-check.mjs",
+    "verify-licence-endpoints.mjs",
     "verify-licence-issuance.mjs",
+    "verify-licence-purchase.mjs",
     "verify-license-terms.mjs",
     "verify-life-files.mjs",
     "verify-lint-coverage.mjs",
@@ -136,8 +139,6 @@
     "verify-web-research.mjs",
     "verify-working-copy.mjs",
     "verify-workspace-search.mjs",
-    "verify-wp-rollback.mjs",
-    "verify-licence-purchase.mjs",
-    "verify-licence-endpoints.mjs"
+    "verify-wp-rollback.mjs"
   ]
 }

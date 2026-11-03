@@ -67,9 +67,9 @@ export default function AdminLicences() {
         <h2 className="text-sm tracking-widest text-heading">LICENCE REGISTER</h2>
       </div>
 
-      <p className="text-xs text-ink">
+      <p className="text-xs text-ink-strong">
         Every licence on every account. Revoking here is immediate for the customer&apos;s next check and is written to the
-        audit log. A licence issued to you is also on your own <span className="text-primary">/licences</span> page.
+        audit log. A licence issued to you is also on your own <span className="text-ink-strong">/licences</span> page.
       </p>
 
       {estate && (
@@ -90,13 +90,13 @@ export default function AdminLicences() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="jti or account email"
-            className="bg-transparent text-xs text-ink outline-none w-56"
+            className="bg-transparent text-xs text-ink-strong outline-none w-56"
           />
         </div>
         <select
           value={state}
           onChange={(e) => setState(e.target.value)}
-          className="bg-transparent border border-primary/20 rounded px-2 py-1 text-xs text-ink"
+          className="bg-transparent border border-primary/20 rounded px-2 py-1 text-xs text-ink-strong"
         >
           <option value="">any state</option>
           <option value="active">active</option>
@@ -120,9 +120,9 @@ export default function AdminLicences() {
       )}
 
       {rows === null ? (
-        <div className="flex items-center gap-2 text-xs text-ink"><Loader2 size={14} className="animate-spin" /> Loading the register…</div>
+        <div className="flex items-center gap-2 text-xs text-ink-strong"><Loader2 size={14} className="animate-spin" /> Loading the register…</div>
       ) : rows.length === 0 ? (
-        <div className="text-xs text-ink border border-primary/20 rounded px-3 py-4">
+        <div className="text-xs text-ink-strong border border-primary/20 rounded px-3 py-4">
           No licence matches {q ? `“${q}”` : 'this filter'}{state ? ` in state ${state}` : ''}.{' '}
           <button onClick={() => { setQ(''); setState(''); }} className="text-primary underline">Clear the filter</button>
         </div>
@@ -146,12 +146,12 @@ export default function AdminLicences() {
                 const s = STATE_STYLE[r.state] ?? STATE_STYLE.expired;
                 return (
                   <tr key={r.jti} className="border-b border-primary/10">
-                    <td className="py-2 pr-3 text-ink">{r.owner?.email ?? '—'}</td>
-                    <td className="py-2 pr-3 font-mono text-[11px] text-ink/70">{r.jti}</td>
-                    <td className="py-2 pr-3 text-ink">{r.plan}</td>
-                    <td className="py-2 pr-3 text-ink">{r.seats}</td>
-                    <td className="py-2 pr-3 text-ink/70">{fmt(r.issuedAt)}</td>
-                    <td className="py-2 pr-3 text-ink/70">{fmt(r.expiresAt)}</td>
+                    <td className="py-2 pr-3 text-ink-strong">{r.owner?.email ?? '—'}</td>
+                    <td className="py-2 pr-3 font-mono text-[11px] text-ink-strong">{r.jti}</td>
+                    <td className="py-2 pr-3 text-ink-strong">{r.plan}</td>
+                    <td className="py-2 pr-3 text-ink-strong">{r.seats}</td>
+                    <td className="py-2 pr-3 text-ink-strong">{fmt(r.issuedAt)}</td>
+                    <td className="py-2 pr-3 text-ink-strong">{fmt(r.expiresAt)}</td>
                     <td className="py-2 pr-3">
                       <span className={`inline-flex items-center gap-1 border rounded px-1.5 py-0.5 ${s.badge}`}>
                         <s.Icon size={11} /> {s.label}
@@ -159,7 +159,7 @@ export default function AdminLicences() {
                     </td>
                     <td className="py-2">
                       {r.state === 'revoked' ? (
-                        <span className="text-ink/40">revoked {fmt(r.revokedAt)}</span>
+                        <span className="text-ink-strong">revoked {fmt(r.revokedAt)}</span>
                       ) : (
                         <button
                           onClick={() => revoke(r.jti)}
