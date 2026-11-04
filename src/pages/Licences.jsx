@@ -34,6 +34,7 @@ export default function Licences() {
   const [rows, setRows] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(null);
+  const [trial, setTrial] = useState(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -49,6 +50,22 @@ export default function Licences() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // THE TRIAL REQUIRES A LOGIN (Rob, 2026-11-04). This page is only reachable signed in, and the function issues to
+  // the caller's own account — one per account, so asking twice returns the same trial instead of extending it.
+  const startTrial = async () => {
+    setBusy('trial');
+    setError(null);
+    try {
+      const { data } = await base44.functions.invoke('trialLicence', {});
+      setTrial(data);
+      await load();
+    } catch (e) {
+      setError(e?.message || 'Could not start a trial.');
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const revoke = async (jti) => {
     if (!window.confirm('Revoke this licence? Any build using it stops verifying at its next check.')) return;
@@ -109,12 +126,36 @@ export default function Licences() {
             <p className="mt-1 text-sm text-slate-500">
               A licence is issued to this account when you start a plan.
             </p>
-            <Link
-              to="/market"
-              className="mt-4 inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
-            >
-              See the plans
-            </Link>
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
+              <button
+                onClick={startTrial}
+                disabled={busy === 'trial'}
+                className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-60"
+              >
+                {busy === 'trial' ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
+                Start a 14-day free trial
+              </button>
+              <Link
+                to="/market"
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-800"
+              >
+                See the plans
+              </Link>
+            </div>
+          </div>
+        )}
+
+        {trial?.licence && (
+          <div className="mt-6 rounded-xl border border-indigo-500/30 bg-indigo-500/5 px-5 py-4 text-left">
+            <p className="text-sm font-medium text-indigo-200">
+              {trial.state === 'already-issued' ? 'Your trial is already active' : 'Your 14-day trial is ready'}
+            </p>
+            <p className="mt-1 text-xs text-slate-400">
+              It is on this page from now on, and it can be revoked here like any other licence.
+            </p>
+            <code className="mt-3 block break-all rounded-lg bg-slate-950/60 p-3 text-[11px] text-slate-300">{trial.licence}</code>
+            <p className="mt-3 text-xs text-slate-400">Install it on the machine that runs the gate:</p>
+            <code className="mt-1 block rounded-lg bg-slate-950/60 p-3 text-[11px] text-slate-300">valiant licence {trial.licence}</code>
           </div>
         )}
 
