@@ -14,12 +14,30 @@
 // a corpus subscription is still a thing you buy. It is also not a subscription: when it expires it stops, and
 // nothing renews it.
 import { prisma } from '../db.js';
-import { buildClaims, claimsFromRow, signLicence } from '../lib/licenceKey.js';
+import { buildClaims, claimsFromRow, issuerKeyPemAsync, signLicence } from '../lib/licenceKey.js';
 
 export const TRIAL_DAYS = 14;
 
 /** The idempotency key: one trial per account, in the column that already means "this licence came from one checkout". */
 export const trialKey = (userId) => `trial_${userId}`;
+/**
+ * Sign with the deployment's key, WHEREVER IT LIVES.
+ *
+ * `signLicence()` alone reads the environment only. This deployment can hold the key in Supabase Vault (#739/#741), and
+ * the Stripe webhook already resolves it that way — so an endpoint calling the sync signer answers 503 on a Vault
+ * deployment while renewals sign happily in the same process. One resolver, used by every path that mints.
+ */
+async function signWithDeploymentKey(db, claims) {
+  const { pem } = await issuerKeyPemAsync(db);
+  if (!pem) {
+    throw Object.assign(
+      new Error('No licence signing key on this deployment — set VVS_ISSUER_KEY_PEM, or store vvs_issuer_key in Supabase Vault.'),
+      { status: 503 },
+    );
+  }
+  return signLicence(claims, pem);
+}
+
 
 export default async function trialLicence({ user }) {
   if (!user?.id) throw Object.assign(new Error('sign in to start a trial'), { status: 401 });
@@ -28,7 +46,7 @@ export default async function trialLicence({ user }) {
   if (existing) {
     // Re-derived from the row, never stored as a token — the same rule every other licence follows.
     return {
-      licence: signLicence(claimsFromRow(existing)),
+      licence: await signWithDeploymentKey(prisma, claimsFromRow(existing)),
       plan: existing.plan,
       seats: existing.seats,
       state: 'already-issued',
@@ -39,7 +57,7 @@ export default async function trialLicence({ user }) {
   const claims = buildClaims({ accountId: user.id, plan: 'solo', seats: 1, days: TRIAL_DAYS });
 
   // Sign BEFORE writing: no issuer key means 503 and no row, so a trial that cannot be verified never looks issued.
-  const token = signLicence(claims);
+  const token = await signWithDeploymentKey(prisma, claims);
 
   try {
     await prisma.licence.create({
@@ -59,7 +77,7 @@ export default async function trialLicence({ user }) {
     // Two clicks at once: the unique index decides, and the loser returns the winner's trial rather than a 500.
     if (String(e?.code) === 'P2002') {
       const won = await prisma.licence.findUnique({ where: { stripe_session_id: trialKey(user.id) } });
-      if (won) return { licence: signLicence(claimsFromRow(won)), plan: won.plan, seats: won.seats, state: 'already-issued' };
+      if (won) return { licence: await signWithDeploymentKey(prisma, claimsFromRow(won)), plan: won.plan, seats: won.seats, state: 'already-issued' };
     }
     throw e;
   }
