@@ -29,7 +29,10 @@ const PENDING_TTL_MS = 10 * 60 * 1000; // 10 minutes
 // store are far too broad a surface to expose to an anonymous compiled
 // binary that could end up on anyone's machine.
 export const DEVICE_SCOPE_FUNCTIONS = {
-  ai_action: ['runAiAction'],
+  // runAiAction: one AI call, billed to the approving user.
+  // getUsage: read-only — the balance and the last few entries, so a client can answer "what did that cost"
+  // without an estimate. Same scope, because the same client needs both and neither reaches any other account.
+  ai_action: ['runAiAction', 'getUsage'],
 };
 const DEFAULT_SCOPES = ['ai_action'];
 
