@@ -12,8 +12,26 @@
 // path that reaches this function, choose the signing key (it is the deployment's), or read anyone
 // else's licences (the list route is scoped the same way).
 import { prisma } from '../db.js';
-import { buildClaims, signLicence, PLANS } from '../lib/licenceKey.js';
+import { buildClaims, issuerKeyPemAsync, signLicence, PLANS } from '../lib/licenceKey.js';
 import { assertCanIssue } from '../lib/licencePolicy.js';
+
+/**
+ * Sign with the deployment's key, WHEREVER IT LIVES.
+ *
+ * `signLicence()` alone reads the environment only. This deployment can hold the key in Supabase Vault (#739/#741), and
+ * the Stripe webhook already resolves it that way — so an endpoint calling the sync signer answers 503 on a Vault
+ * deployment while renewals sign happily in the same process. One resolver, used by every path that mints.
+ */
+async function signWithDeploymentKey(db, claims) {
+  const { pem } = await issuerKeyPemAsync(db);
+  if (!pem) {
+    throw Object.assign(
+      new Error('No licence signing key on this deployment — set VVS_ISSUER_KEY_PEM, or store vvs_issuer_key in Supabase Vault.'),
+      { status: 503 },
+    );
+  }
+  return signLicence(claims, pem);
+}
 
 export default async function handler({ user, body }) {
   // The rule lives in lib/licencePolicy.js so it can be proven in the guards job, which installs nothing.
@@ -30,7 +48,7 @@ export default async function handler({ user, body }) {
 
   // Sign BEFORE writing. If the deployment has no key, this throws 503 and no row is created: a licence
   // that exists but cannot be verified is worse than no licence, because it looks issued.
-  const token = signLicence(claims);
+  const token = await signWithDeploymentKey(prisma, claims);
 
   const row = await prisma.licence.create({
     data: {
