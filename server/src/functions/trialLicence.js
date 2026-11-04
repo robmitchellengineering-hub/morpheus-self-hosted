@@ -18,6 +18,18 @@ import { buildClaims, claimsFromRow, issuerKeyPemAsync, signLicence } from '../l
 
 export const TRIAL_DAYS = 14;
 
+/**
+ * THE FIRST TEN GET TWELVE MONTHS, which is what the pricing page has promised since it was written ("First 10 — 12 months
+ * free, for a named reference"). Until now the only licence a partner could self-serve was 14 days, so the promise and the
+ * product disagreed and the partner would have discovered it a fortnight in.
+ *
+ * A count of existing trials is the whole rule — no flag to set, no admin action, no way to issue to somebody else's account
+ * (`issueLicence` can only ever issue to its caller, which is why this belongs here rather than in a button). The eleventh
+ * account gets the standard trial, and the reply says which one it got.
+ */
+export const PARTNER_LICENCES = 10;
+export const PARTNER_DAYS = 365;
+
 /** The idempotency key: one trial per account, in the column that already means "this licence came from one checkout". */
 export const trialKey = (userId) => `trial_${userId}`;
 /**
@@ -54,7 +66,20 @@ export default async function trialLicence({ user }) {
     };
   }
 
-  const claims = buildClaims({ accountId: user.id, plan: 'solo', seats: 1, days: TRIAL_DAYS });
+  // How many people have started a trial before this one? The first ten are design partners.
+  let partnerNumber = null;
+  try {
+    const prior = await prisma.licence.count({ where: { stripe_session_id: { startsWith: 'trial_' } } });
+    if (prior < PARTNER_LICENCES) partnerNumber = prior + 1;
+  } catch {
+    // A count that cannot be read must not silently upgrade somebody to a year. It falls through to the standard trial, and
+    // the reply carries `days`, so the outcome is visible rather than assumed.
+  }
+
+  const days = partnerNumber ? PARTNER_DAYS : TRIAL_DAYS;
+  const plan = partnerNumber ? 'team' : 'solo';
+  const seats = partnerNumber ? 5 : 1;
+  const claims = buildClaims({ accountId: user.id, plan, seats, days });
 
   // Sign BEFORE writing: no issuer key means 503 and no row, so a trial that cannot be verified never looks issued.
   const token = await signWithDeploymentKey(prisma, claims);
@@ -70,7 +95,9 @@ export default async function trialLicence({ user }) {
         issued_at: new Date(claims.iat * 1000),
         expires_at: new Date(claims.exp * 1000),
         stripe_session_id: trialKey(user.id),
-        note: `${TRIAL_DAYS}-day trial, issued once per account`,
+        note: partnerNumber
+          ? `design partner #${partnerNumber}: ${PARTNER_DAYS} days, ${seats} seats, for a named reference`
+          : `${TRIAL_DAYS}-day trial, issued once per account`,
       },
     });
   } catch (e) {
@@ -87,7 +114,13 @@ export default async function trialLicence({ user }) {
     plan: claims.plan,
     seats: claims.seats,
     state: 'issued',
-    days: TRIAL_DAYS,
+    // WHICH ONE YOU GOT IS IN THE REPLY, because the page must be able to say "you are design partner #3, twelve months"
+    // rather than showing a 14-day number to somebody the site promised a year to.
+    days,
+    partner: partnerNumber,
     expiresAt: new Date(claims.exp * 1000).toISOString(),
+    note: partnerNumber
+      ? `design partner #${partnerNumber} of ${PARTNER_LICENCES} — ${PARTNER_DAYS} days, ${seats} seats`
+      : `${TRIAL_DAYS}-day trial`,
   };
 }
