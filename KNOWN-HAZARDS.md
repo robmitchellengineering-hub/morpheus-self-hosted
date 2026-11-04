@@ -716,3 +716,34 @@ body is wrapped, and the readers tolerate an item that vanished between enumerat
 RULE: a loop that picks work up from a queue must tolerate an item that vanishes mid-iteration, and must never let one unexpected per-item error kill the loop itself — an error inside the loop is the one failure that is not recoverable by a retry, because the thing that would retry it is the thing that died.
 
 GUARD: accepted without a check — queue-kill resilience is only observable under a vanishing item; `review-loop-harness.mjs` is the nearest harness and does not cover it
+
+## H27 — a credential that is issued outside the platform
+
+**Incident (2026-11-04).** The free trial was a **static file**: `vvs.morpheus.nz/downloads/trial-2026-11.licence`,
+one token, the same bytes for every visitor, minted by a script on a laptop with no account behind it. It shipped,
+worked, and was wrong in every way that matters — not issued, not attributable to anyone, not revocable, and expiring
+for every customer on the day the file went stale. It also bypassed morpheus.nz entirely, which is the one thing the
+platform exists to do. Rob found it: *"it should be issuing through morpheus.nz."*
+
+The pull towards it was real and is the lesson: a **login stood between a stranger and a working install**, and a
+static file removes that friction in one line. Every future temptation will look like that line.
+
+RULE: a credential is minted by the platform, under an account, and revocable. A test fixture may be static; anything
+a customer receives may not be — if the friction is a login, the fix is a one-button trial, never a published token.
+
+GUARD: `scripts/vvs-public-surface.mjs` (harness-mesh) fails if the marketing site serves a licence file or the raw
+corpus feed. Accepted limit: it checks the published surface, not the intent — a token emailed by hand would pass it.
+
+## H28 — a page promised a capability that did not exist yet
+
+**Incident (2026-11-04).** The install page was rewritten to say "a free 14-day trial is issued to your Morpheus
+account — sign in and press start" and published **before** the trial button existed in the deployed app bundle
+(measured afterwards: zero matches for the button's text in `main-*.js`). A visitor following the page reached a
+screen whose only control was "See the plans". The same session had already done the shape once: pricing copy
+promising a `$1,500` tier whose card had been missing for weeks.
+
+RULE: copy that names a control is published with the control, not before it — and after publishing, fetch the page
+and follow its own instruction. A capability announcement is a claim about production and is measured like one.
+
+GUARD: `scripts/vvs-public-surface.mjs` (harness-mesh) — the endpoints the install page tells a customer to use must
+answer as documented (a 401 that means "sign in", never a 404 that means "nothing here").
