@@ -18,11 +18,29 @@
 // only this deployment wrote. A client that posts "plan: team, seats: 99" changes nothing.
 import { prisma } from '../db.js';
 import { stripeFetch } from '../lib/stripe.js';
-import { buildClaims, claimsFromRow, signLicence } from '../lib/licenceKey.js';
+import { buildClaims, claimsFromRow, issuerKeyPemAsync, signLicence } from '../lib/licenceKey.js';
 import { claimDecision, licenceForPackage } from '../lib/licencePolicy.js';
 
 // The published feed. Env override so a staging deployment can point at its own copy.
 // THE FEED IS SERVED BY THE API, TO A LICENCE — not by the marketing site to anybody with the URL.
+/**
+ * Sign with the deployment's key, WHEREVER IT LIVES.
+ *
+ * `signLicence()` alone reads the environment only. This deployment can hold the key in Supabase Vault (#739/#741), and
+ * the Stripe webhook already resolves it that way — so an endpoint calling the sync signer answers 503 on a Vault
+ * deployment while renewals sign happily in the same process. One resolver, used by every path that mints.
+ */
+async function signWithDeploymentKey(db, claims) {
+  const { pem } = await issuerKeyPemAsync(db);
+  if (!pem) {
+    throw Object.assign(
+      new Error('No licence signing key on this deployment — set VVS_ISSUER_KEY_PEM, or store vvs_issuer_key in Supabase Vault.'),
+      { status: 503 },
+    );
+  }
+  return signLicence(claims, pem);
+}
+
 const CORPUS_FEED_URL = process.env.VVS_CORPUS_FEED_URL || 'https://api.morpheus.nz/api/functions/vvsFeed';
 
 export default async function handler({ user, body }) {
@@ -49,7 +67,7 @@ export default async function handler({ user, body }) {
 
   if (verdict.action === 'return') {
     // Derive the token from the row rather than storing it (the token is never at rest in this table).
-    return { licence: signLicence(claimsFromRow(existing)), plan: existing.plan, seats: existing.seats, state: 'already-claimed' };
+    return { licence: await signWithDeploymentKey(prisma, claimsFromRow(existing)), plan: existing.plan, seats: existing.seats, state: 'already-claimed' };
   }
 
   const pkg = session?.metadata?.package;
@@ -62,7 +80,7 @@ export default async function handler({ user, body }) {
   // the SDK.)
   // Sign BEFORE writing: no key means 503 and no row, so a licence that cannot be verified never looks issued.
   const claims = buildClaims({ accountId: user.id, plan: bought.plan, seats: bought.seats, days: 365, feed: bought.feed });
-  const token = signLicence(claims);
+  const token = await signWithDeploymentKey(prisma, claims);
 
   try {
     await prisma.licence.create({
@@ -84,7 +102,7 @@ export default async function handler({ user, body }) {
     if (String(e?.code) === 'P2002') {
       const won = await prisma.licence.findUnique({ where: { stripe_session_id: sessionId } });
       if (won && won.created_by_id === user.id) {
-        return { licence: signLicence(claimsFromRow(won)), plan: won.plan, seats: won.seats, state: 'already-claimed' };
+        return { licence: await signWithDeploymentKey(prisma, claimsFromRow(won)), plan: won.plan, seats: won.seats, state: 'already-claimed' };
       }
     }
     throw e;
