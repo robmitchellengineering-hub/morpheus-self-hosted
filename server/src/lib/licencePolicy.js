@@ -71,7 +71,13 @@ export function licenceForPackage(pkg, seats) {
   const n = Math.max(1, Number(seats) || 1);
   if (pkg === 'sdk') return { plan: 'solo', seats: n };
   if (pkg === 'sdk_ent') return { plan: 'team', seats: n };
-  return null; // corpus packages buy a feed, not a licence
+  // THE CORPUS TIERS INCLUDE THE SDK. They used to buy "a feed, not a licence", which made the $1,500 tier deliver
+  // less than the $25 one and forced a buyer to hold two subscriptions to use what they had paid for. The tiers are
+  // additive: a corpus subscription mints an SDK licence as well, with the feed entitlement on it. (Rob, 2026-11-04:
+  // "those tiers all come with the sdk … they are all additive tiers of capability".)
+  if (pkg === 'corpus') return { plan: 'team', seats: n, feed: 'corpus' };
+  if (pkg === 'corpus_ent') return { plan: 'enterprise', seats: 0, feed: 'corpus_ent' };
+  return null; // an unknown package buys nothing
 }
 
 /**

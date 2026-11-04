@@ -55,7 +55,7 @@ try { signLicence(claims, ""); } catch (e) { refused = e.status === 503; }
 check("no key -> refuse with 503, not a throwaway key", refused, true);
 
 // Bad input is rejected before signing.
-for (const [name, args] of [["unknown plan", { accountId: "a", plan: "enterprise", days: 1 }], ["no account", { plan: "solo", days: 1 }], ["zero days", { accountId: "a", plan: "solo", days: 0 }]]) {
+for (const [name, args] of [["unknown plan", { accountId: "a", plan: "platinum", days: 1 }], ["no account", { plan: "solo", days: 1 }], ["zero days", { accountId: "a", plan: "solo", days: 0 }]]) {
   let threw = false;
   try { buildClaims(args); } catch { threw = true; }
   check(`rejects: ${name}`, threw, true);
@@ -136,15 +136,20 @@ console.log("\nreturning an existing licence is the same licence\n");
 
 // A corpus purchase must end in DELIVERY, not a 422 explaining what they did not buy. The first version
 // refused it politely; that is a dead end on the page a customer reaches immediately after paying.
-console.log("\ncorpus purchases are delivered, not refused\n");
+console.log("\nthe tiers are additive: a corpus purchase is a licence WITH the feed\n");
 {
-  const { feedForPackage, licenceForPackage } = await import("../server/src/lib/licencePolicy.js");
+  const { licenceForPackage } = await import("../server/src/lib/licencePolicy.js");
   check("sdk buys a licence", JSON.stringify(licenceForPackage("sdk", 3)), JSON.stringify({ plan: "solo", seats: 3 }));
   check("sdk_ent buys a team licence", JSON.stringify(licenceForPackage("sdk_ent", 2)), JSON.stringify({ plan: "team", seats: 2 }));
-  check("corpus is NOT a licence", licenceForPackage("corpus", 1), null);
-  check("…it delivers the feed", JSON.stringify(feedForPackage("corpus")), JSON.stringify({ feed: "corpus" }));
-  check("…and so does corpus_ent", JSON.stringify(feedForPackage("corpus_ent")), JSON.stringify({ feed: "corpus" }));
-  check("an unknown package is neither", feedForPackage("nonsense"), null);
+  // CHANGED 2026-11-04. This guard used to assert `corpus is NOT a licence` and that the feed alone was delivered.
+  // The product owner then stated the model the site now sells: every tier includes the SDK and the tiers are additive,
+  // so a $500 subscription that handed over a URL and no licence delivered less than the $25 one. The guard is updated
+  // with the decision, not around it — and it still refuses an unknown package.
+  check("corpus is a TEAM licence with the feed", JSON.stringify(licenceForPackage("corpus", 1)),
+        JSON.stringify({ plan: "team", seats: 1, feed: "corpus" }));
+  check("corpus_ent is an ENTERPRISE licence with the feed", JSON.stringify(licenceForPackage("corpus_ent", 1)),
+        JSON.stringify({ plan: "enterprise", seats: 0, feed: "corpus_ent" }));
+  check("an unknown package buys neither", licenceForPackage("nonsense", 1), null);
 }
 
 console.log(failures === 0 ? "\nlicence issuance: every case behaves\n" : `\nlicence issuance: ${failures} case(s) wrong\n`);

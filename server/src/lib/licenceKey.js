@@ -12,10 +12,10 @@
 // shipped build does not carry looks issued and verifies nowhere.
 import { createPrivateKey, sign, randomBytes } from "node:crypto";
 
-export const PLANS = { solo: 1, team: 5 };
+export const PLANS = { solo: 1, team: 5, enterprise: 0 };  // 0 = no seat count, the SDK's own meaning
 
 /** The claims an SDK build reads. Keep this shape in step with `licence-public.pem`'s verifier. */
-export function buildClaims({ accountId, plan, seats, days, kid = "vvs-2026-11", now = Date.now() }) {
+export function buildClaims({ accountId, plan, seats, days, feed = null, kid = "vvs-2026-11", now = Date.now() }) {
   if (!accountId || typeof accountId !== "string") throw Object.assign(new Error("accountId required"), { status: 400 });
   if (!(plan in PLANS)) throw Object.assign(new Error(`unknown plan "${plan}" — one of ${Object.keys(PLANS).join(", ")}`), { status: 400 });
   const n = Number(days);
@@ -31,6 +31,9 @@ export function buildClaims({ accountId, plan, seats, days, kid = "vvs-2026-11",
     exp: iat + Math.round(n * 86400),
     kid,
     jti: `lic_${randomBytes(6).toString("hex")}`,
+    // THE FEED ENTITLEMENT. Absent on a plain SDK licence, `corpus`/`corpus_ent` on a tier that includes it. The SDK's
+    // verifier ignores claims it does not know, so this is additive to every build already shipped.
+    ...(feed ? { feed } : {}),
   };
 }
 
