@@ -19,10 +19,11 @@
 import { prisma } from '../db.js';
 import { stripeFetch } from '../lib/stripe.js';
 import { buildClaims, claimsFromRow, signLicence } from '../lib/licenceKey.js';
-import { claimDecision, licenceForPackage, feedForPackage } from '../lib/licencePolicy.js';
+import { claimDecision, licenceForPackage } from '../lib/licencePolicy.js';
 
 // The published feed. Env override so a staging deployment can point at its own copy.
-const CORPUS_FEED_URL = process.env.VVS_CORPUS_FEED_URL || 'https://vvs.morpheus.nz/corpus/current.txt';
+// THE FEED IS SERVED BY THE API, TO A LICENCE — not by the marketing site to anybody with the URL.
+const CORPUS_FEED_URL = process.env.VVS_CORPUS_FEED_URL || 'https://api.morpheus.nz/api/functions/vvsFeed';
 
 export default async function handler({ user, body }) {
   const sessionId = String(body?.sessionId || '').trim();
@@ -53,21 +54,14 @@ export default async function handler({ user, body }) {
 
   const pkg = session?.metadata?.package;
   const bought = licenceForPackage(pkg, session?.metadata?.seats);
-  if (!bought) {
-    // A corpus subscription buys the FEED, and it must be delivered here rather than refused: the buyer is
-    // standing on the page they were redirected to after paying.
-    if (feedForPackage(pkg)) {
-      return {
-        state: 'feed',
-        feedUrl: CORPUS_FEED_URL,
-        note: 'Corpus subscription: install it with the command below. The feed is signed, so an unsigned copy cannot be substituted for it.',
-      };
-    }
-    throw Object.assign(new Error('That checkout is not a licence or a corpus subscription.'), { status: 422 });
-  }
+  if (!bought) throw Object.assign(new Error('That checkout is not a licence or a corpus subscription.'), { status: 422 });
 
+  // A CORPUS TIER IS A LICENCE WITH THE FEED ON IT. It used to return a bare URL to a public file, so the buyer paid
+  // $500 and received neither a licence nor anything exclusive. Now the same mint runs, the entitlement rides in the
+  // claims, and the feed URL is the endpoint that checks it. (Rob, 2026-11-04: the tiers are additive and all include
+  // the SDK.)
   // Sign BEFORE writing: no key means 503 and no row, so a licence that cannot be verified never looks issued.
-  const claims = buildClaims({ accountId: user.id, plan: bought.plan, seats: bought.seats, days: 365 });
+  const claims = buildClaims({ accountId: user.id, plan: bought.plan, seats: bought.seats, days: 365, feed: bought.feed });
   const token = signLicence(claims);
 
   try {
@@ -96,5 +90,12 @@ export default async function handler({ user, body }) {
     throw e;
   }
 
-  return { licence: token, plan: claims.plan, seats: claims.seats, state: 'issued' };
+  // A corpus buyer gets BOTH: the licence (which the tool needs) and the feed URL the licence unlocks.
+  return {
+    licence: token,
+    plan: claims.plan,
+    seats: claims.seats,
+    state: 'issued',
+    ...(bought.feed ? { feed: bought.feed, feedUrl: CORPUS_FEED_URL } : {}),
+  };
 }
