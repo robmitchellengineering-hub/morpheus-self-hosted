@@ -133,7 +133,7 @@ export default function Licences() {
                 className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-60"
               >
                 {busy === 'trial' ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
-                Start a 14-day free trial
+                Start your free licence
               </button>
               <Link
                 to="/market"
@@ -148,10 +148,14 @@ export default function Licences() {
         {trial?.licence && (
           <div className="mt-6 rounded-xl border border-indigo-500/30 bg-indigo-500/5 px-5 py-4 text-left">
             <p className="text-sm font-medium text-indigo-200">
-              {trial.state === 'already-issued' ? 'Your trial is already active' : 'Your 14-day trial is ready'}
+              {trial.partner
+                ? `Design partner #${trial.partner} — 12 months, ${trial.seats} seats`
+                : trial.state === 'already-issued' ? 'Your trial is already active' : 'Your 14-day trial is ready'}
             </p>
             <p className="mt-1 text-xs text-slate-400">
-              It is on this page from now on, and it can be revoked here like any other licence.
+              {trial.partner
+                ? 'First ten accounts, twelve months free, for a named reference. It is on this page from now on and can be revoked here like any other licence.'
+                : 'It is on this page from now on, and it can be revoked here like any other licence.'}
             </p>
             <code className="mt-3 block break-all rounded-lg bg-slate-950/60 p-3 text-[11px] text-slate-300">{trial.licence}</code>
             <p className="mt-3 text-xs text-slate-400">Install it on the machine that runs the gate:</p>
