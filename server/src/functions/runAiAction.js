@@ -189,7 +189,68 @@ ${title ? `Title: ${title}\n` : ''}Document:\n${text}`;
   };
 }
 
-const TASKS = { schema_mapping: schemaMapping, review_probe: reviewProbe, summarize: summarizeTask };
+// verify_paraphrase: a researcher has rewritten a source in their own words and cites it. The check is NOT
+// whether the wording matches (that is the citation/quote path, done locally) but whether the REWORDED sentence
+// faithfully represents what the source says — same facts, numbers, dates and attributions, no invented claim,
+// no shifted meaning. This is the "every claim, verified" promise for prose, and it needs a model because it is
+// about meaning, not substrings.
+const VERIFY_MAX_CHARS = 12000;
+
+async function verifyParaphrase(userId, body) {
+  const sentence = typeof body.sentence === 'string' ? body.sentence.trim() : '';
+  const raw = typeof body.source === 'string' ? body.source : '';
+  if (!sentence) throw Object.assign(new Error('sentence required'), { status: 400 });
+  if (!raw.trim()) throw Object.assign(new Error('source required'), { status: 400 });
+  const source = raw.slice(0, VERIFY_MAX_CHARS);
+
+  const prompt = `A researcher wants to write this sentence in their own words, citing a source:
+
+SENTENCE:
+${sentence}
+
+SOURCE (the passage it is cited to):
+${source}
+
+Decide whether the sentence faithfully represents what the source actually says, even though the wording differs.
+A paraphrase is FAITHFUL when it states the same facts — the same numbers, dates, names and attributions — and adds
+no claim the source does not support. It is NOT faithful when it changes a number or date, contradicts the source,
+adds something the source never says, or shifts the meaning. Exact wording is NOT required, and is NOT the test.
+
+Answer with a verdict, a one-sentence reason, and — when the sentence is NOT faithful — two or three alternative
+wordings that WOULD be faithful, so the researcher can choose one. Each option must keep the same facts and meaning
+but fix what was wrong (the wrong number, the invented claim, the shifted meaning). Leave the options empty when the
+sentence is already faithful.`;
+
+  const { result, model, provider, usage } = await invokeAI({
+    userId,
+    prompt,
+    schema: {
+      type: 'object',
+      properties: {
+        verdict: { type: 'string', enum: ['faithful', 'misrepresents', 'unsupported', 'uncertain'],
+          description: 'faithful = same facts in different words; misrepresents = changes/contradicts a fact; unsupported = adds a claim the source does not make; uncertain = the source is too thin to decide.' },
+        reason: { type: 'string', description: 'One sentence explaining the verdict.' },
+        options: { type: 'array', description: 'Two or three faithful rewordings; empty when the sentence is already faithful.',
+          items: { type: 'string' } },
+      },
+      required: ['verdict', 'reason', 'options'],
+    },
+    role: 'diagnosis',
+    // Sized for the reasoning model the diagnosis role resolves to, like the other tasks.
+    maxTokens: 8000,
+  });
+
+  return {
+    verdict: result.verdict || 'uncertain',
+    reason: result.reason || '',
+    options: Array.isArray(result.options) ? result.options.filter((o) => typeof o === 'string' && o.trim()) : [],
+    model,
+    provider,
+    usage,
+  };
+}
+
+const TASKS = { schema_mapping: schemaMapping, review_probe: reviewProbe, summarize: summarizeTask, verify_paraphrase: verifyParaphrase };
 
 export default async function handler({ user, body }) {
   const { task } = body || {};
