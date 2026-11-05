@@ -142,7 +142,54 @@ async function reviewProbe(userId, body) {
   };
 }
 
-const TASKS = { schema_mapping: schemaMapping, review_probe: reviewProbe };
+// summarize: a source document becomes bullet points, so a reader can decide which
+// of several search results is worth the full text. This is the Ask Alice "summarise
+// under each doc link" action — reachable through the same scoped, billed path, and
+// it must therefore be bounded and schema-limited like the other tasks: it returns a
+// list of strings, nothing else, and never touches files or project context.
+const SUMMARIZE_MAX_CHARS = 20000;
+
+async function summarizeTask(userId, body) {
+  const title = typeof body.title === 'string' ? body.title : null;
+  const raw = typeof body.text === 'string' ? body.text : '';
+  if (!raw.trim()) throw Object.assign(new Error('text required'), { status: 400 });
+  // slice, not silent truncation: the caller already caps, and over-sending is refused so a
+  // summary is never silently built from a document the reader thinks is complete.
+  const text = raw.slice(0, SUMMARIZE_MAX_CHARS);
+
+  const prompt = `Summarize the following source document into concise bullet points an academic could use to decide whether to read the full text. Prefer facts, numbers, dates and names over adjectives. Use neutral language; do not evaluate the document or add commentary. 4-8 bullets.
+
+${title ? `Title: ${title}\n` : ''}Document:\n${text}`;
+
+  const { result, model, provider, usage } = await invokeAI({
+    userId,
+    prompt,
+    schema: {
+      type: 'object',
+      properties: {
+        bullets: {
+          type: 'array',
+          description: 'Concise factual bullet points, one fact per bullet, 4-8 of them.',
+          items: { type: 'string' },
+        },
+      },
+      required: ['bullets'],
+    },
+    role: 'diagnosis',
+    // Sized for the reasoning model the diagnosis role resolves to, like schema_mapping: the
+    // thinking is billed against this budget, the answer itself is a handful of short strings.
+    maxTokens: 8000,
+  });
+
+  return {
+    bullets: Array.isArray(result.bullets) ? result.bullets.filter((b) => typeof b === 'string' && b.trim()) : [],
+    model,
+    provider,
+    usage,
+  };
+}
+
+const TASKS = { schema_mapping: schemaMapping, review_probe: reviewProbe, summarize: summarizeTask };
 
 export default async function handler({ user, body }) {
   const { task } = body || {};
