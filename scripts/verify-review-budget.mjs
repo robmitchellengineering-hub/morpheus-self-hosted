@@ -36,11 +36,12 @@ function check(name, actual, expected) {
 }
 
 console.log('\n1. the budget is a ceiling, and it is small on purpose');
-// FIVE, not four. The first version set four and the first pass ate all of them, so the fix the review
+// EIGHT, not four. The first version set four and the first pass ate all of them, so the fix the review
 // had just demanded was never re-checked — measured 2026-09-30. A budget that cannot afford to verify its
-// own demand is worse than no budget, so one call is reserved.
-check('five calls per operation, one of them reserved', REVIEW_BUDGET.maxCalls, 5);
-check('…and one re-review pass', REVIEW_BUDGET.maxReReviewPasses, 1);
+// own demand is worse than no budget, so one call is reserved, and two re-review passes afford the loop's
+// intended MAX_REVIEW_ATTEMPTS (3) without re-reviewing the whole set.
+check('eight calls per operation, one of them reserved', REVIEW_BUDGET.maxCalls, 8);
+check('…and up to two re-review passes', REVIEW_BUDGET.maxReReviewPasses, 2);
 
 console.log('\n2. calls stop at the ceiling — the twelve-call run cannot recur');
 const budget = createReviewBudget();
@@ -53,9 +54,10 @@ for (let i = 0; i < 20; i++) {
 }
 check('exactly maxCalls calls were permitted', spent.length, REVIEW_BUDGET.maxCalls);
 check('…and the ceiling is what stopped it', canSpendReviewCall(budget).ok, false);
-check('…naming the budget in the reason', /budget of 5 call/.test(canSpendReviewCall(budget).reason || ''), true);
-// The arithmetic from the real run: 10 files / 3 per chunk = 4 chunks, x 3 attempts = 12 calls.
-check('a 10-file backend can no longer cost twelve reviewer calls',
+check('…naming the budget in the reason', /budget of 8 call/.test(canSpendReviewCall(budget).reason || ''), true);
+// The arithmetic from the old unbounded run: 10 files / 3 per chunk = 4 chunks, x 3 whole-set attempts = 12
+// calls. The ceiling caps that; scoped re-review keeps the real cost far under it.
+check('a 10-file backend is capped, not twelve reviewer calls',
   Math.min(Math.ceil(10 / 3) * 3, REVIEW_BUDGET.maxCalls), REVIEW_BUDGET.maxCalls);
 // AND the budget has to be big enough to actually cover a realistic set in one pass, or the ceiling would
 // be honest and useless: 4 calls covers 12 files at 3 per chunk, which is what a backend usually is.
@@ -66,17 +68,26 @@ console.log('\n2b. the calls a pass will actually make are COUNTABLE, not greppa
 // The first version of this guard asserted that the budget check appeared before `invokeAI` in the source
 // — and DELETING the check still passed, because the phrase survived elsewhere in the file. Counting what
 // the planner returns cannot be fooled that way, and it is the number that costs money.
-// FIVE chunks against a budget of FOUR, so there is a surplus to report. The first version used exactly
-// four chunks (ten files) and then asserted a surplus — there was none, so the check failed while the code
+// EIGHT chunks against an unreserved allowance of SEVEN, so there is a surplus to report. The first version
+// used exactly the allowance and then asserted a surplus — there was none, so the check failed while the code
 // was right. A fixture that does not contain the condition proves nothing about it.
-const tenFiles = [[{ path: 'a.js' }, { path: 'b.js' }, { path: 'c.js' }], [{ path: 'd.js' }, { path: 'e.js' }, { path: 'f.js' }], [{ path: 'g.js' }, { path: 'h.js' }, { path: 'i.js' }], [{ path: 'j.js' }, { path: 'k.js' }, { path: 'l.js' }], [{ path: 'm.js' }]];
+const bigSet = [
+  [{ path: 'a.js' }, { path: 'b.js' }, { path: 'c.js' }],
+  [{ path: 'd.js' }, { path: 'e.js' }, { path: 'f.js' }],
+  [{ path: 'g.js' }, { path: 'h.js' }, { path: 'i.js' }],
+  [{ path: 'j.js' }, { path: 'k.js' }, { path: 'l.js' }],
+  [{ path: 'm.js' }, { path: 'n.js' }, { path: 'o.js' }],
+  [{ path: 'p.js' }, { path: 'q.js' }, { path: 'r.js' }],
+  [{ path: 's.js' }, { path: 't.js' }, { path: 'u.js' }],
+  [{ path: 'v.js' }],
+];
 const b0 = createReviewBudget();
 // WITH THE RESERVE THE REVIEWER PASSES. Calling the planner without it measures a different function than
 // the one that runs — the first version of this check did that and failed while the code was correct.
-const planned = planReviewCalls(tenFiles, b0, { reserve: REVIEW_BUDGET.reserveForReReview });
-check('a 13-file backend spends the unreserved allowance',
+const planned = planReviewCalls(bigSet, b0, { reserve: REVIEW_BUDGET.reserveForReReview });
+check('a 22-file backend spends the unreserved allowance',
   planned.willReview.length, REVIEW_BUDGET.maxCalls - REVIEW_BUDGET.reserveForReReview);
-check('…and the surplus chunk is reported unreviewed', planned.unreviewed, ['m.js']);
+check('…and the surplus chunk is reported unreviewed', planned.unreviewed, ['v.js']);
 check('…with the budget marked spent', planned.stopped, true);
 // The unreserved allowance is spent, but the RESERVED call survives — that is the reserve's whole point,
 // and asserting "nothing at all is left" here would be asserting the bug it exists to prevent.
@@ -87,16 +98,18 @@ check('…and then nothing', canSpendReviewCall(b0).ok, false);
 // planner SPENDS, so calling it twice against the same budget measured the second call, not the first,
 // and the first version of this check failed for that reason with the code correct.
 const b1 = createReviewBudget();
-const small = planReviewCalls([tenFiles[0]], b1);
+const small = planReviewCalls([bigSet[0]], b1);
 check('a 3-file change still gets its one call', small.willReview.length, 1);
 check('…and nothing is reported unreviewed', small.unreviewed, []);
 
-console.log('\n3. re-review passes stop after one');
+console.log('\n3. re-review passes stop after two (the intended MAX_REVIEW_ATTEMPTS)');
 const b2 = createReviewBudget();
 check('the first pass is allowed', canStartReReviewPass(b2).ok, true);
 startReReviewPass(b2);
-check('…and the second is not', canStartReReviewPass(b2).ok, false);
-check('…naming the limit', /1 re-review pass/.test(canStartReReviewPass(b2).reason || ''), true);
+check('…the second is allowed', canStartReReviewPass(b2).ok, true);
+startReReviewPass(b2);
+check('…and the third is not', canStartReReviewPass(b2).ok, false);
+check('…naming the limit', /2 re-review pass/.test(canStartReReviewPass(b2).reason || ''), true);
 
 console.log('\n4. a re-review covers only what the fix could have changed');
 const paths = ['a.js', 'b.js', 'c.js', 'd.js'];

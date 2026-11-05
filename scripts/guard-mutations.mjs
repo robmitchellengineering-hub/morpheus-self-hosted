@@ -107,7 +107,7 @@ export const MUTATIONS = [
     guard: 'verify-review-budget.mjs',
     file: 'server/src/lib/reviewBudget.js',
     why: 'Raises the call ceiling to a number no allowance can exceed, which is the runaway review the budget was introduced to stop (12 calls / 473 credits).',
-    find: '  maxCalls: 5,',
+    find: '  maxCalls: 8,',
     replace: '  maxCalls: 99,',
   },
   {
