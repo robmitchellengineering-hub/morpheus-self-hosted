@@ -34,13 +34,16 @@
  * `maxCalls` is per operation, not per turn: a backend generation is one operation, a chat build is
  * another. `firstPassFiles` documents the shape rather than being enforced here — the caller chunks.
  *
- * The numbers are deliberately small. A review is a second opinion; ten of them is not ten times the
- * confidence, it is the same opinion paid for repeatedly. Four calls covers a 9-12 file backend in one
- * pass with one re-review of what changed.
+ * The numbers are deliberately bounded — a review is a second opinion, not an unbounded loop — but they now
+ * AFFORD the loop's intended shape: `MAX_REVIEW_ATTEMPTS` (3) in `reviewer.js` means the first review plus up
+ * to two fix-and-re-review passes. The earlier cap of one re-review pass stopped the loop after a single fix
+ * attempt, so a critical finding that needed a second pass read as "the reviewer doesn't iterate". A re-review
+ * re-examines only the files a critical issue named (reReviewScope), so two passes cost a couple of extra
+ * calls, not the whole set again — that scoping is what keeps eight affordable where twelve were not.
  */
 export const REVIEW_BUDGET = Object.freeze({
-  maxCalls: 5,
-  maxReReviewPasses: 1,
+  maxCalls: 8,
+  maxReReviewPasses: 2,
   // Calls held back from the FIRST pass so there is something left to re-check the fix with. Without it
   // the first pass consumes the whole ceiling and the re-review is silently skipped — measured 2026-09-30:
   // four chunks spent all four calls, and the fix that the review had just demanded was never checked.
