@@ -250,7 +250,74 @@ sentence is already faithful.`;
   };
 }
 
-const TASKS = { schema_mapping: schemaMapping, review_probe: reviewProbe, summarize: summarizeTask, verify_paraphrase: verifyParaphrase };
+// disambiguate: turn a vague instruction into an unambiguous one — the "Unambiguator" (D37).
+// The SDK has already detected the dangling pronouns and vague terms mechanically; this task does
+// the one thing a mechanical pass cannot: it GUESSES what each vague term refers to and produces a
+// fluent rewrite. The caller turns each resolution into a yes/no tick (override-by-default), and
+// re-scans the rewrite — so "unambiguous" stays a checked fact on the client, not a claim here.
+const DISAMBIGUATE_MAX = 20;
+const DISAMBIGUATE_MAX_CHARS = 2000;
+
+async function disambiguateTask(userId, body) {
+  const instruction = typeof body.instruction === 'string' ? body.instruction.trim() : '';
+  if (!instruction) throw Object.assign(new Error('instruction required'), { status: 400 });
+  // slice, not silent truncation: the caller already caps, and over-sending is refused so a rewrite
+  // is never silently built from an instruction the reader thinks is complete.
+  const text = instruction.slice(0, DISAMBIGUATE_MAX_CHARS);
+  const ambiguities = (Array.isArray(body.ambiguities) ? body.ambiguities : [])
+    .slice(0, DISAMBIGUATE_MAX)
+    .map((a) => ({ referent: String(a?.referent ?? '').trim(), kind: String(a?.kind ?? '') }))
+    .filter((a) => a.referent);
+  const list = ambiguities.map((a, i) => `${i + 1}. "${a.referent}"${a.kind ? ` (${a.kind})` : ''}`).join('\n');
+
+  const prompt = `Rewrite this instruction so it is unambiguous, and state what each vague term means.
+
+INSTRUCTION:
+${text}
+
+Ambiguities already found:
+${list || '(none — rewrite fluently and name anything vague anyway)'}
+
+Rules: no dangling "it", "this", "that", "these", "those", "they" or "them" may survive in the rewrite. No vague terms ("stuff", "things", "something", "whatever", "bits and bobs", "a bit", "etc") may survive. Every pronoun is replaced by the concrete, named thing it refers to. Keep the rewrite a single clear instruction, in the same tense and voice as the original.`;
+
+  const { result, model, provider, usage } = await invokeAI({
+    userId,
+    prompt,
+    schema: {
+      type: 'object',
+      properties: {
+        rewrite: { type: 'string', description: 'The instruction rewritten with every pronoun and vague term replaced by a concrete named thing.' },
+        resolutions: {
+          type: 'array',
+          description: 'One entry per ambiguity: what the vague term most likely refers to. Omit an entry only if the term cannot be resolved.',
+          items: {
+            type: 'object',
+            properties: {
+              referent: { type: 'string', description: 'The exact vague term, as listed.' },
+              resolved_to: { type: 'string', description: 'The concrete thing it refers to.' },
+            },
+            required: ['referent', 'resolved_to'],
+          },
+        },
+      },
+      required: ['rewrite', 'resolutions'],
+    },
+    role: 'diagnosis',
+    // Sized for the reasoning model the diagnosis role resolves to, like the other tasks.
+    maxTokens: 8000,
+  });
+
+  return {
+    rewrite: typeof result.rewrite === 'string' ? result.rewrite : '',
+    resolutions: (Array.isArray(result.resolutions) ? result.resolutions : [])
+      .filter((r) => r && typeof r.referent === 'string' && typeof r.resolved_to === 'string'),
+    model,
+    provider,
+    usage,
+  };
+}
+
+const TASKS = { schema_mapping: schemaMapping, review_probe: reviewProbe, summarize: summarizeTask, verify_paraphrase: verifyParaphrase, disambiguate: disambiguateTask };
 
 export default async function handler({ user, body }) {
   const { task } = body || {};
