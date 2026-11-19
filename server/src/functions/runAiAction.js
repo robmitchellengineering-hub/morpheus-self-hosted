@@ -317,7 +317,55 @@ Rules: no dangling "it", "this", "that", "these", "those", "they" or "them" may 
   };
 }
 
-const TASKS = { schema_mapping: schemaMapping, review_probe: reviewProbe, summarize: summarizeTask, verify_paraphrase: verifyParaphrase, disambiguate: disambiguateTask };
+// review_judgment: judge an agent reply for the VVS "verify-before-claim" rules 33 (understand) and
+// 11 (review behaviour). The VVS SDK's model gate (valiant gate review, REVIEW_GATE=1) sends the reply;
+// this task does the one thing the SDK's mechanical pass cannot: it judges whether the reply advises or
+// asserts without evidencing that it read/understood the subject (33), or reviews only the surface of a
+// change rather than what it does (11). Returns a verdict + a one-line detail the SDK turns into a pass/fail.
+const JUDGMENT_MAX_CHARS = 50000;
+
+async function reviewJudgmentTask(userId, body) {
+  const reply = typeof body.reply === 'string' ? body.reply.trim() : '';
+  if (!reply) throw Object.assign(new Error('reply required'), { status: 400 });
+  const text = reply.slice(0, JUDGMENT_MAX_CHARS);
+
+  const prompt = `You are a scientific-rigor reviewer for a "verify-before-claim" discipline. Judge whether the agent reply below violates either of two rules.
+
+Rule 33 — never advise or claim what you do not understand: the reply advises, asserts, or diagnoses a fact about a subject (a file, a system, a result, a mechanism) without evidencing that it actually read or understood the underlying source.
+
+Rule 11 — review behaviour, not just the export surface: the reply evaluates a change by its surface (names, signatures, exports, file counts) rather than by what the change does or why.
+
+Return "fail" if EITHER rule is violated, "pass" otherwise. Be strict: an unsubstantiated assertion about a specific file or system is a fail; a reply that cites what it actually read is a pass.
+
+AGENT REPLY:
+${text}`;
+
+  const { result, model, provider, usage } = await invokeAI({
+    userId,
+    prompt,
+    schema: {
+      type: 'object',
+      properties: {
+        verdict: { type: 'string', enum: ['pass', 'fail'], description: 'pass if neither rule is violated, fail if either is.' },
+        detail: { type: 'string', description: 'One sentence naming the rule violated (33 or 11) and the unsubstantiated claim, or confirming the reply evidences its sources.' },
+      },
+      required: ['verdict', 'detail'],
+    },
+    role: 'diagnosis',
+    // Sized for the reasoning model the diagnosis role resolves to, like the other tasks.
+    maxTokens: 2000,
+  });
+
+  return {
+    verdict: result.verdict === 'fail' ? 'fail' : 'pass',
+    detail: typeof result.detail === 'string' ? result.detail : '',
+    model,
+    provider,
+    usage,
+  };
+}
+
+const TASKS = { schema_mapping: schemaMapping, review_probe: reviewProbe, summarize: summarizeTask, verify_paraphrase: verifyParaphrase, disambiguate: disambiguateTask, review_judgment: reviewJudgmentTask };
 
 export default async function handler({ user, body }) {
   const { task } = body || {};
